@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "docId": "doc-sample1",
+    "type": "markdown",
+    "name": "光学笔记.md",
+    "path": "/notes/光学笔记.md",
+    "size": 1024,
+    "mtime": 1700000000000,
+    "parsedAt": 1700000001000
+  },
+  "sections": [
+    {
+      "id": "ch1-1",
+      "title": "折射定律",
+      "content": "折射定律（斯涅尔定律）描述光从一种介质进入另一种介质时入射角与折射角的关系：n1·sin(θ1) = n2·sin(θ2)。当光从光密介质射向光疏介质且入射角大于临界角时，发生全反射。",
+      "keywords": [
+        {"word": "折射定律", "count": 3, "isTerm": true},
+        {"word": "斯涅尔定律", "count": 1, "isTerm": true},
+        {"word": "全反射", "count": 1, "isTerm": true},
+        {"word": "临界角", "count": 1, "isTerm": true}
+      ],
+      "location": {"page": 1, "offset": 0}
+    },
+    {
+      "id": "ch1-2",
+      "title": "干涉与衍射",
+      "content": "杨氏双缝干涉实验展示了光的波动性。光程差为波长整数倍时出现明纹，半整数倍时出现暗纹。单缝衍射的中央明纹宽度与缝宽和波长有关。",
+      "keywords": [
+        {"word": "干涉", "count": 2, "isTerm": true},
+        {"word": "衍射", "count": 2, "isTerm": true},
+        {"word": "杨氏双缝", "count": 1, "isTerm": true},
+        {"word": "光程差", "count": 1, "isTerm": true}
+      ],
+      "location": {"page": 1, "offset": 200}
+    }
+  ],
+  "rawText": "# 光学笔记\n\n## 折射定律\n折射定律（斯涅尔定律）...\n\n## 干涉与衍射\n杨氏双缝干涉实验..."
+}

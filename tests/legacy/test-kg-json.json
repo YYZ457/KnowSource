@@ -1,0 +1,290 @@
+{
+  "stats": {
+    "paragraphs": 5,
+    "entities": 60,
+    "questions": 5,
+    "edges": 325,
+    "cooccurrenceEdges": 318,
+    "semanticEdges": 0,
+    "examinesEdges": 7,
+    "communities": 9,
+    "avgDegree": "10.00"
+  },
+  "topEntities": [
+    {
+      "label": "定律",
+      "pagerank": 0.0444,
+      "community": 1,
+      "df": 3,
+      "isHub": true
+    },
+    {
+      "label": "光的",
+      "pagerank": 0.0397,
+      "community": 2,
+      "df": 4,
+      "isHub": true
+    },
+    {
+      "label": "干涉",
+      "pagerank": 0.0333,
+      "community": 2,
+      "df": 2,
+      "isHub": true
+    },
+    {
+      "label": "折射",
+      "pagerank": 0.0332,
+      "community": 1,
+      "df": 3,
+      "isHub": true
+    },
+    {
+      "label": "反射",
+      "pagerank": 0.033,
+      "community": 1,
+      "df": 3,
+      "isHub": true
+    },
+    {
+      "label": "入射",
+      "pagerank": 0.0308,
+      "community": 1,
+      "df": 2,
+      "isHub": true
+    },
+    {
+      "label": "现象",
+      "pagerank": 0.0289,
+      "community": 2,
+      "df": 3,
+      "isHub": true
+    },
+    {
+      "label": "偏振",
+      "pagerank": 0.0283,
+      "community": 4,
+      "df": 1,
+      "isHub": true
+    },
+    {
+      "label": "射角",
+      "pagerank": 0.0277,
+      "community": 1,
+      "df": 2,
+      "isHub": true
+    },
+    {
+      "label": "入射角",
+      "pagerank": 0.0277,
+      "community": 1,
+      "df": 2,
+      "isHub": true
+    },
+    {
+      "label": "介质",
+      "pagerank": 0.0246,
+      "community": 1,
+      "df": 1,
+      "isHub": true
+    },
+    {
+      "label": "射定律",
+      "pagerank": 0.0239,
+      "community": 1,
+      "df": 2,
+      "isHub": true
+    },
+    {
+      "label": "衍射",
+      "pagerank": 0.0236,
+      "community": 2,
+      "df": 1,
+      "isHub": true
+    },
+    {
+      "label": "光线",
+      "pagerank": 0.0221,
+      "community": 1,
+      "df": 2,
+      "isHub": false
+    },
+    {
+      "label": "光学",
+      "pagerank": 0.0214,
+      "community": 3,
+      "df": 3,
+      "isHub": false
+    },
+    {
+      "label": "传播",
+      "pagerank": 0.021,
+      "community": 2,
+      "df": 3,
+      "isHub": false
+    },
+    {
+      "label": "的折射",
+      "pagerank": 0.0204,
+      "community": 1,
+      "df": 2,
+      "isHub": false
+    },
+    {
+      "label": "光波",
+      "pagerank": 0.0199,
+      "community": 2,
+      "df": 3,
+      "isHub": false
+    },
+    {
+      "label": "偏振光",
+      "pagerank": 0.0195,
+      "community": 4,
+      "df": 1,
+      "isHub": false
+    },
+    {
+      "label": "方向",
+      "pagerank": 0.0186,
+      "community": 4,
+      "df": 2,
+      "isHub": false
+    }
+  ],
+  "questionConnections": [
+    {
+      "question": "Q1",
+      "connections": [
+        {
+          "entity": "定律",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "question": "Q2",
+      "connections": [
+        {
+          "entity": "现象",
+          "weight": 0.98
+        }
+      ]
+    },
+    {
+      "question": "Q3",
+      "connections": [
+        {
+          "entity": "双缝",
+          "weight": 0.94
+        },
+        {
+          "entity": "干涉",
+          "weight": 0.61
+        }
+      ]
+    },
+    {
+      "question": "Q4",
+      "connections": [
+        {
+          "entity": "定律",
+          "weight": 0.98
+        }
+      ]
+    },
+    {
+      "question": "Q5",
+      "connections": [
+        {
+          "entity": "儒斯特",
+          "weight": 1
+        },
+        {
+          "entity": "布儒斯",
+          "weight": 0.98
+        }
+      ]
+    }
+  ],
+  "communities": {
+    "0": [
+      "其中是"
+    ],
+    "1": [
+      "折射",
+      "定律",
+      "反射",
+      "射光",
+      "折射率",
+      "介质",
+      "公式",
+      "射角",
+      "射定律",
+      "入射",
+      "入射角",
+      "的折射",
+      "光线",
+      "球面",
+      "全反射",
+      "布儒斯",
+      "儒斯特",
+      "种介质",
+      "曲率半",
+      "球面折"
+    ],
+    "2": [
+      "光的",
+      "干涉",
+      "传播",
+      "现象",
+      "衍射",
+      "光在",
+      "sin",
+      "光波",
+      "缝干涉",
+      "是光",
+      "形成",
+      "薄膜",
+      "光栅",
+      "单缝",
+      "涉现象",
+      "干涉现",
+      "分辨",
+      "双缝",
+      "的干涉",
+      "爱里斑"
+    ],
+    "3": [
+      "光学",
+      "透镜",
+      "学系统",
+      "光学系",
+      "距是",
+      "焦距",
+      "系统"
+    ],
+    "4": [
+      "偏振",
+      "偏振光",
+      "方向",
+      "原理",
+      "振动",
+      "偏振片",
+      "电矢量",
+      "相同"
+    ],
+    "5": [
+      "式其中"
+    ],
+    "6": [
+      "公式其"
+    ],
+    "7": [
+      "衍射光"
+    ],
+    "8": [
+      "i0"
+    ]
+  }
+}

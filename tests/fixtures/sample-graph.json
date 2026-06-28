@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    {"id": "concept-1", "type": "concept", "content": "折射定律", "source": {"docId": "doc-sample1", "sectionId": "ch1-1"}, "weight": 3, "aliases": ["斯涅尔定律"]},
+    {"id": "concept-2", "type": "concept", "content": "全反射", "source": {"docId": "doc-sample1", "sectionId": "ch1-1"}, "weight": 1},
+    {"id": "concept-3", "type": "concept", "content": "干涉", "source": {"docId": "doc-sample1", "sectionId": "ch1-2"}, "weight": 2},
+    {"id": "concept-4", "type": "concept", "content": "衍射", "source": {"docId": "doc-sample1", "sectionId": "ch1-2"}, "weight": 2},
+    {"id": "doc-sample1", "type": "document", "content": "光学笔记.md", "source": {"docId": "doc-sample1"}, "weight": 1}
+  ],
+  "edges": [
+    {"from": "concept-1", "to": "concept-2", "type": "derive", "weight": 0.9, "evidence": {"docId": "doc-sample1", "sectionId": "ch1-1"}},
+    {"from": "concept-3", "to": "concept-4", "type": "similar", "weight": 0.7, "evidence": {"docId": "doc-sample1", "sectionId": "ch1-2"}},
+    {"from": "concept-1", "to": "doc-sample1", "type": "belong", "weight": 1},
+    {"from": "concept-3", "to": "doc-sample1", "type": "belong", "weight": 1}
+  ]
+}

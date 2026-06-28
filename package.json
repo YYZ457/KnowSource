@@ -1,0 +1,115 @@
+{
+  "name": "knowledge-ide",
+  "version": "2.1.0",
+  "description": "Knowledge IDE — 类 VSCode/Obsidian 的知识工作台（PDF/MD/代码多文档 + 跨文档知识图谱 + Idea 管理）",
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.knowsource.app",
+    "productName": "知源",
+    "copyright": "Copyright © 2026 知源 KnowSource",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "services/**/*",
+      "core/**/*",
+      "plugins/**/*",
+      "package.json",
+      "eng.traineddata",
+      "chi_sim.traineddata"
+    ],
+    "asarUnpack": [
+      "**/node_modules/@napi-rs/**",
+      "**/node_modules/tesseract.js/**",
+      "**/node_modules/tesseract.js-core/**"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/pdfjs-dist/cmaps",
+        "to": "cmaps"
+      },
+      {
+        "from": "node_modules/pdfjs-dist/standard_fonts",
+        "to": "standard_fonts"
+      },
+      {
+        "from": "eng.traineddata",
+        "to": "traineddata/eng.traineddata"
+      },
+      {
+        "from": "chi_sim.traineddata",
+        "to": "traineddata/chi_sim.traineddata"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "知源",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "language": "2052",
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false
+    }
+  },
+  "scripts": {
+    "dev:backend": "node services/server.js",
+    "dev": "concurrently \"npm run dev:backend\" \"vite\"",
+    "setup:ollama": "ollama pull qwen2.5:1.5b",
+    "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron electron/main.js --dev\"",
+    "build": "vite build",
+    "build:electron": "npm run build && electron-builder",
+    "dist": "npm run build:electron",
+    "extract-terms": "node scripts/extract-terms-cli.js",
+    "test-build-pdf": "node scripts/test-build-pdf.js",
+    "test": "set KNOWLEDGE_IDE_NO_PERSIST=1&& node --test tests/*.test.js",
+    "lint": "echo \"lint placeholder\""
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
+    "d3-force": "^3.0.0",
+    "dompurify": "^3.4.11",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "markdown-it": "^14.2.0",
+    "pdfjs-dist": "^3.11.174",
+    "pinia": "^2.1.0",
+    "splitpanes": "^4.1.2",
+    "tesseract.js": "^5.1.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "concurrently": "^8.2.0",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1",
+    "jimp": "^1.6.1",
+    "pdf-parse": "^1.1.1",
+    "png-to-ico": "^3.0.1",
+    "vite": "^5.0.0",
+    "wait-on": "^7.2.0"
+  },
+  "keywords": [
+    "knowledge-graph",
+    "ide",
+    "pdf",
+    "research",
+    "electron"
+  ],
+  "author": "Knowledge IDE",
+  "license": "MIT"
+}
