@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+release-new/
+release-build/
+
+# Electron cache
+.electron-cache/
+
+# User data (runtime generated)
+data/
+
+# Debug output
+debug-output-build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Test artifacts
+coverage/
+.nyc_output/
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime data
+tmp/
+temp/
+
+# Traineddata (too large for git, downloaded separately)
+*.traineddata
