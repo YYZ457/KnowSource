@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知源 KnowSource - 学术论文知识图谱可视化</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","PingFang SC","Helvetica Neue",sans-serif;background:#f0f2f5;}
+
+/* ===== Header ===== */
+.header{
+  height:48px;background:linear-gradient(135deg,#1a365d 0%,#2b6cb0 100%);
+  color:#fff;display:flex;align-items:center;padding:0 16px;
+  box-shadow:0 2px 8px rgba(0,0,0,.12);position:relative;z-index:100;
+}
+.logo{font-size:18px;font-weight:700;letter-spacing:1px;margin-right:20px;white-space:nowrap;}
+.logo span{color:#63b3ed;}
+.legend{display:flex;gap:8px;align-items:center;flex:1;min-width:0;}
+.legend-item{
+  display:flex;align-items:center;gap:5px;cursor:pointer;
+  padding:3px 10px;border-radius:4px;transition:background .2s;
+  font-size:12px;white-space:nowrap;overflow:hidden;
+}
+.legend-item:hover{background:rgba(255,255,255,.15);}
+.legend-item.dim{opacity:.4;}
+.legend-item.active{background:rgba(255,255,255,.2);}
+.legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+.header-ver{font-size:11px;opacity:.7;white-space:nowrap;margin-left:12px;}
+
+/* ===== Main Layout ===== */
+.main{display:flex;height:calc(100% - 48px);position:relative;}
+
+/* ===== Tree Panel ===== */
+.tree-panel{
+  width:240px;min-width:180px;background:#fff;border-right:1px solid #e2e8f0;
+  overflow-y:auto;overflow-x:hidden;font-size:13px;flex-shrink:0;
+}
+.tree-hd{
+  padding:10px 14px;font-weight:700;color:#2d3748;border-bottom:1px solid #edf2f7;
+  font-size:13px;background:#f7fafc;position:sticky;top:0;z-index:10;
+}
+.tn{cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden;}
+.tn-c{
+  display:flex;align-items:center;padding:4px 6px;border-radius:3px;
+  margin:1px 4px;transition:background .15s;
+}
+.tn-c:hover{background:#ebf8ff;}
+.tn-c.sel{background:#bee3f8;}
+.tn-arrow{
+  width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;
+  flex-shrink:0;transition:transform .2s;
+}
+.tn-arrow::before{
+  content:'';border-left:4px solid #718096;border-top:3px solid transparent;
+  border-bottom:3px solid transparent;transition:border-color .2s;
+}
+.tn-arrow.exp{transform:rotate(90deg);}
+.tn-arrow.exp::before{border-left-color:#2b6cb0;}
+.tn-arrow.hidden{visibility:hidden;}
+.tn-icon{
+  width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;
+  margin-right:5px;flex-shrink:0;
+}
+.tn-icon .idoc{width:10px;height:11px;background:currentColor;border-radius:1.5px;}
+.tn-icon .ich{width:8px;height:8px;background:currentColor;border-radius:50%;}
+.tn-icon .ient{width:6px;height:6px;background:currentColor;border-radius:50%;}
+.tn-label{overflow:hidden;text-overflow:ellipsis;flex:1;font-size:12.5px;color:#2d3748;}
+.tn-children{display:none;}
+.tn-children.show{display:block;}
+
+/* ===== Resizer ===== */
+.resizer{width:4px;cursor:col-resize;background:transparent;transition:background .2s;z-index:50;flex-shrink:0;}
+.resizer:hover,.resizer.drag{background:#4299e1;}
+
+/* ===== Graph Panel ===== */
+.graph-panel{flex:1;position:relative;background:#fff;overflow:hidden;min-width:250px;}
+.graph-panel svg{width:100%;height:100%;display:block;}
+.graph-tip{
+  position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,.92);
+  padding:6px 12px;border-radius:5px;font-size:11px;color:#718096;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);pointer-events:none;line-height:1.6;
+}
+.tooltip{
+  position:absolute;background:rgba(26,54,93,.95);color:#fff;padding:7px 11px;
+  border-radius:5px;font-size:11.5px;pointer-events:none;opacity:0;
+  transition:opacity .15s;z-index:200;max-width:240px;line-height:1.5;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+
+/* ===== PDF Panel ===== */
+.pdf-panel{
+  width:360px;min-width:260px;background:#e2e8f0;overflow-y:auto;
+  padding:16px 12px;border-left:1px solid #e2e8f0;flex-shrink:0;
+}
+.pdf-page{
+  width:100%;max-width:336px;margin:0 auto 16px auto;background:#fff;
+  box-shadow:0 2px 10px rgba(0,0,0,.12);border:1px solid #cbd5e0;
+  padding:32px 30px 24px;
+}
+.pdf-hd{
+  font-size:8.5px;color:#a0aec0;border-bottom:.5px solid #e2e8f0;
+  padding-bottom:5px;text-align:center;margin-bottom:14px;
+}
+.pdf-ft{
+  font-size:9.5px;color:#a0aec0;border-top:.5px solid #e2e8f0;
+  padding-top:6px;text-align:center;margin-top:16px;
+}
+.pdf-title{
+  font-family:"SimHei","Microsoft YaHei",sans-serif;font-size:16px;font-weight:700;
+  text-align:center;margin-bottom:12px;color:#1a202c;line-height:1.4;
+}
+.pdf-auth{font-size:10.5px;text-align:center;color:#4a5568;margin-bottom:4px;}
+.pdf-aff{font-size:8.5px;text-align:center;color:#718096;margin-bottom:14px;}
+.pdf-abs-lbl{
+  font-family:"SimHei","Microsoft YaHei",sans-serif;font-size:10.5px;
+  font-weight:700;margin-bottom:5px;color:#1a202c;
+}
+.pdf-abs{
+  font-family:"SimSun","Songti SC",serif;font-size:9.5px;line-height:1.8;
+  text-align:justify;text-indent:2em;color:#2d3748;margin-bottom:8px;
+}
+.pdf-kw{font-family:"SimSun","Songti SC",serif;font-size:9px;color:#2d3748;margin-top:6px;}
+.pdf-kw b{font-family:"SimHei","Microsoft YaHei",sans-serif;}
+.pdf-sec{
+  font-family:"SimHei","Microsoft YaHei",sans-serif;font-size:12px;font-weight:700;
+  color:#1a202c;margin:12px 0 6px;
+}
+.pdf-sub{
+  font-family:"SimHei","Microsoft YaHei",sans-serif;font-size:10.5px;font-weight:700;
+  color:#2d3748;margin:8px 0 5px;
+}
+.pdf-body{
+  font-family:"SimSun","Songti SC",serif;font-size:9.5px;line-height:1.8;
+  text-align:justify;text-indent:2em;color:#2d3748;margin-bottom:5px;
+}
+.ent{background:#fef5c8;padding:0 2px;border-radius:2px;cursor:pointer;transition:background .15s;}
+.ent:hover{background:#f6e05e;}
+.ent.hl{background:#ed8936;color:#fff;}
+.ref{font-size:7px;vertical-align:super;color:#4299e1;}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#cbd5e0;border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:#a0aec0;}
+
+/* ===== SVG Node Styles ===== */
+.link{stroke:#cbd5e0;stroke-opacity:.5;fill:none;transition:stroke-opacity.2s;}
+.link.dim{stroke-opacity:.15;}
+.link.hl{stroke:#4299e1;stroke-opacity:1;stroke-width:2.5;}
+.link.cross{stroke:#f6ad55;stroke-opacity:.5;stroke-dasharray:4,3;}
+.link.cross.hl{stroke:#ed8936;stroke-opacity:1;stroke-width:2;}
+.node-doc rect{stroke-width:2px;cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.15));}
+.node-ch circle{stroke-width:2px;stroke:#fff;cursor:pointer;}
+.node-ent circle{stroke-width:1px;stroke:#fff;cursor:pointer;}
+.nlabel{
+  font-size:10.5px;pointer-events:none;fill:#2d3748;
+  font-family:"Microsoft YaHei",sans-serif;text-anchor:middle;
+}
+.node-doc .nlabel{font-size:11px;font-weight:600;fill:#1a202c;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">知源 <span>KnowSource</span></div>
+  <div class="legend" id="legend"></div>
+  <div class="header-ver">v2.2.0 Demo</div>
+</div>
+<div class="main">
+  <div class="tree-panel" id="treePanel">
+    <div class="tree-hd">文献结构导航</div>
+    <div id="treeContent"></div>
+  </div>
+  <div class="resizer" id="rz1"></div>
+  <div class="graph-panel" id="graphPanel">
+    <svg id="gsvg"></svg>
+    <div class="graph-tip">点击节点展开/折叠 · 双击跳转PDF · 滚轮缩放 · 拖拽移动</div>
+    <div class="tooltip" id="ttip"></div>
+  </div>
+  <div class="resizer" id="rz2"></div>
+  <div class="pdf-panel" id="pdfPanel"></div>
+</div>
+
+<script>
+// ============ DATA ============
+const COLORS={doc1:'#e53e3e',doc2:'#3182ce',doc3:'#38a169'};
+const DOCNAMES={doc1:'注意力机制研究进展',doc2:'图卷积神经网络综述',doc3:'预训练语言模型综述'};
+const DOCSHORT={doc1:'注意力机制',doc2:'图卷积网络',doc3:'预训练模型'};
+const ENTCOLORS={model:'#805ad5',method:'#dd6b20',other:'#718096'};
+
+const MODEL_SET=new Set(['Transformer','BERT','GPT','GPT-2','GPT-3','LSTM','Encoder-Decoder','GCN','GAT','GATv2',
+  'ChebNet','GraphSAGE','STN','SENet','CBAM','ViT','ELMo','RoBERTa','ALBERT','SpanBERT','ERNIE','XLNet',
+  'GCMC','NGCF','LightGCN','STGCN','DCRNN','GRU','循环神经网络','卷积神经网络','图神经网络','图卷积神经网络',
+  '预训练语言模型','AGNN']);
+const METHOD_SET=new Set(['注意力机制','自注意力','多头注意力','软注意力','硬注意力','卷积','池化','图池化',
+  '谱方法','空间方法','Softmax','反向传播','强化学习','拉普拉斯矩阵','掩码语言模型','语言模型',
+  '知识蒸馏','微调','自监督学习','深度学习','机器翻译','文本摘要','命名实体识别']);
+function entType(n){
+  if(MODEL_SET.has(n))return 'model';
+  if(METHOD_SET.has(n))return 'method';
+  if(/Net|BERT|GPT|LSTM|Transformer/i.test(n))return 'model';
+  return 'method';
+}
+function entColor(n){return ENTCOLORS[entType(n)]||ENTCOLORS.other;}
+
+// ---- Paper 1 ----
+const P1={
+  id:'doc1',title:'注意力机制在深度学习中的研究进展',
+  authors:'朱张莉，饶元，吴渊，祁伟豪',aff:'西安交通大学软件学院',
+  journal:'中文信息学报',year:'2019',vol:'33(6):1-11',
+  abs:'注意力机制逐渐成为目前深度学习领域的主流方法和研究热点之一，它通过改进源语言表达方式，在解码中动态选择源语言相关信息，从而极大改善了经典Encoder-Decoder框架的不足。本文对近年来注意力机制在深度学习中的研究进展进行综述，首先介绍注意力机制的基本原理和发展历程；然后将现有注意力机制分为软注意力、硬注意力、自注意力、多头注意力等类型；接着总结在NLP、CV、语音等领域的应用；最后讨论挑战与展望。',
+  kw:['深度学习','注意力机制','Encoder-Decoder','自注意力','多头注意力'],
+  pages:[
+    {hd:'中文信息学报 2019年第33卷第6期',
+     cnt:`<div class="pdf-title">注意力机制在深度学习中的研究进展</div>
+       <div class="pdf-auth">朱张莉，饶元，吴渊，祁伟豪</div>
+       <div class="pdf-aff">（西安交通大学 软件学院，陕西 西安 710049）</div>
+       <div class="pdf-abs-lbl">摘 要</div>
+       <div class="pdf-abs">注意力机制逐渐成为目前<span class="ent" data-e="深度学习">深度学习</span>领域的主流方法和研究热点之一，它通过改进源语言表达方式，在解码中动态选择源语言相关信息，从而极大改善了经典<span class="ent" data-e="Encoder-Decoder">Encoder-Decoder</span>框架的不足。本文对近年来注意力机制的研究进展进行综述，介绍其基本原理，将现有方法分为<span class="ent" data-e="软注意力">软注意力</span>、<span class="ent" data-e="硬注意力">硬注意力</span>、<span class="ent" data-e="自注意力">自注意力</span>、<span class="ent" data-e="多头注意力">多头注意力</span>等类型，总结典型应用，讨论挑战与展望。</div>
+       <div class="pdf-kw"><b>关键词：</b><span class="ent" data-e="深度学习">深度学习</span>；<span class="ent" data-e="注意力机制">注意力机制</span>；<span class="ent" data-e="Encoder-Decoder">Encoder-Decoder</span>；<span class="ent" data-e="自注意力">自注意力</span>；<span class="ent" data-e="多头注意力">多头注意力</span></div>`},
+    {hd:'朱张莉等：注意力机制在深度学习中的研究进展',
+     cnt:`<div class="pdf-sec">1 引言</div>
+       <div class="pdf-body">随着<span class="ent" data-e="深度学习">深度学习</span>技术的飞速发展，神经网络模型在计算机视觉、自然语言处理、语音识别等领域取得了显著突破。然而，传统神经网络在处理序列数据时面临信息过载和长距离依赖建模困难等问题。受人类视觉注意力机制启发，研究人员将<span class="ent" data-e="注意力机制">注意力机制</span>引入深度学习模型中，通过动态选择重要信息、抑制无关信息，有效提升了模型性能<span class="ref">[1]</span>。</div>
+       <div class="pdf-body">2014年，Bahdanau等人<span class="ref">[2]</span>首次将注意力机制应用于<span class="ent" data-e="机器翻译">机器翻译</span>任务，提出基于注意力的<span class="ent" data-e="Encoder-Decoder">Encoder-Decoder</span>模型。2017年，Vaswani等人<span class="ref">[3]</span>提出<span class="ent" data-e="Transformer">Transformer</span>模型，完全基于<span class="ent" data-e="自注意力">自注意力</span>机制构建，摒弃了传统的<span class="ent" data-e="循环神经网络">循环神经网络</span>和<span class="ent" data-e="卷积神经网络">卷积神经网络</span>，在机器翻译任务上取得了当时最优结果。后续的<span class="ent" data-e="BERT">BERT</span>、<span class="ent" data-e="GPT">GPT</span>等预训练语言模型均以Transformer为基础架构。</div>
+       <div class="pdf-sub">1.1 注意力机制的认知基础</div>
+       <div class="pdf-body">注意力机制的灵感来源于人类视觉注意系统。人类视觉系统能够快速扫描全局图像，获得需要重点关注的目标区域，即注意力焦点，而后对该区域投入更多注意力资源。深度学习中的注意力机制本质上是一种资源分配机制，将计算资源根据信息重要程度重新分配。</div>`},
+    {hd:'朱张莉等：注意力机制在深度学习中的研究进展',
+     cnt:`<div class="pdf-sec">2 注意力机制基本原理</div>
+       <div class="pdf-sub">2.1 通用框架</div>
+       <div class="pdf-body"><span class="ent" data-e="注意力机制">注意力机制</span>的核心思想是在大量信息中有选择地筛选出少量重要信息并聚焦。在神经网络中，通过计算查询（Query）与键值对（Key-Value）之间的相似度确定注意力权重分布，进而对Value加权求和得到输出。计算分为三步：相似度计算、<span class="ent" data-e="Softmax">Softmax</span>归一化、加权求和。</div>
+       <div class="pdf-sub">2.2 软注意力与硬注意力</div>
+       <div class="pdf-body"><span class="ent" data-e="软注意力">软注意力</span>对所有输入信息分配0到1之间的权重，是可微的，可通过<span class="ent" data-e="反向传播">反向传播</span>端到端训练。<span class="ent" data-e="硬注意力">硬注意力</span>则选择输入子集，权重为0或1，更符合人类注意特点，但不可微，需借助<span class="ent" data-e="强化学习">强化学习</span>方法训练。</div>
+       <div class="pdf-sub">2.3 自注意力机制</div>
+       <div class="pdf-body"><span class="ent" data-e="自注意力">自注意力</span>中查询、键、值来自同一序列，能直接捕捉序列中任意两位置关系。在<span class="ent" data-e="Transformer">Transformer</span>中采用缩放点积注意力：Attention(Q,K,V)=Softmax(QK^T/√d_k)V，可并行计算，相比<span class="ent" data-e="LSTM">LSTM</span>有显著速度优势。</div>
+       <div class="pdf-sub">2.4 多头注意力</div>
+       <div class="pdf-body"><span class="ent" data-e="多头注意力">多头注意力</span>是<span class="ent" data-e="Transformer">Transformer</span>核心组件，将Q、K、V投影到h个子空间并行计算注意力，最后拼接输出，使模型能在不同子空间关注不同位置信息。</div>`},
+    {hd:'朱张莉等：注意力机制在深度学习中的研究进展',
+     cnt:`<div class="pdf-sec">3 注意力机制分类</div>
+       <div class="pdf-sub">3.1 按维度分类</div>
+       <div class="pdf-body">根据作用维度可分为空间注意力、通道注意力和混合注意力。空间注意力代表模型有<span class="ent" data-e="STN">STN</span>；通道注意力代表有<span class="ent" data-e="SENet">SENet</span>；混合注意力代表有<span class="ent" data-e="CBAM">CBAM</span>。</div>
+       <div class="pdf-sec">4 典型应用</div>
+       <div class="pdf-sub">4.1 自然语言处理</div>
+       <div class="pdf-body">在<span class="ent" data-e="机器翻译">机器翻译</span>、文本分类、问答系统、<span class="ent" data-e="文本摘要">文本摘要</span>等任务中，注意力机制已成为标配。基于Transformer的<span class="ent" data-e="BERT">BERT</span>、<span class="ent" data-e="GPT">GPT</span>系列将应用推向新高度。</div>
+       <div class="pdf-sub">4.2 计算机视觉</div>
+       <div class="pdf-body"><span class="ent" data-e="SENet">SENet</span>通过通道注意力在ImageNet上取得显著提升；<span class="ent" data-e="CBAM">CBAM</span>结合空间与通道注意力；视觉Transformer（<span class="ent" data-e="ViT">ViT</span>）将图像分割为patch序列直接使用Transformer分类，在多个基准上超越了<span class="ent" data-e="卷积神经网络">卷积神经网络</span>。</div>`},
+    {hd:'朱张莉等：注意力机制在深度学习中的研究进展',
+     cnt:`<div class="pdf-sec">5 挑战与展望</div>
+       <div class="pdf-body">尽管注意力机制已取得巨大成功，但仍面临若干挑战：一是计算复杂度问题，自注意力复杂度为序列长度的平方；二是模型可解释性问题；三是与其他结构的有效融合问题。未来方向包括稀疏注意力、线性注意力、多模态注意力以及理论解释等。</div>
+       <div class="pdf-body" style="margin-top:10px;"><b>参考文献：</b></div>
+       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[1] 相关研究见原文参考文献。</div>
+       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[2] Bahdanau D, et al. Neural machine translation by jointly learning to align and translate. ICLR 2015.</div>
+       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[3] Vaswani A, et al. Attention is all you need. NeurIPS 2017.</div>`}
+  ],
+  chs:[
+    {id:'d1s1',n:'1',t:'引言',subs:[{id:'d1s1_1',n:'1.1',t:'注意力机制的认知基础',es:[]}],es:['深度学习','注意力机制','机器翻译','Encoder-Decoder','Transformer','自注意力','循环神经网络','卷积神经网络','BERT','GPT','LSTM']},
+    {id:'d1s2',n:'2',t:'注意力机制基本原理',subs:[
+      {id:'d1s2_1',n:'2.1',t:'通用框架',es:['注意力机制','Softmax']},
+      {id:'d1s2_2',n:'2.2',t:'软注意力与硬注意力',es:['软注意力','硬注意力','反向传播','强化学习']},
+      {id:'d1s2_3',n:'2.3',t:'自注意力机制',es:['自注意力','Transformer','LSTM']},
+      {id:'d1s2_4',n:'2.4',t:'多头注意力',es:['多头注意力','Transformer']}
+    ],es:[]},
+    {id:'d1s3',n:'3',t:'注意力机制分类',subs:[{id:'d1s3_1',n:'3.1',t:'按维度分类',es:['STN','SENet','CBAM']}],es:[]},
+    {id:'d1s4',n:'4',t:'典型应用',subs:[
+      {id:'d1s4_1',n:'4.1',t:'自然语言处理',es:['机器翻译','文本摘要','BERT','GPT']},
+      {id:'d1s4_2',n:'4.2',t:'计算机视觉',es:['SENet','CBAM','ViT','卷积神经网络']}
+    ],es:[]},
+    {id:'d1s5',n:'5',t:'挑战与展望',subs:[],es:[]}
+  ]
+};
+
+// ---- Paper 2 ----
+const P2={
+  id:'doc2',title:'图卷积神经网络综述',
+  authors:'徐冰冰，岑科廷，黄俊杰，沈华伟，程学旗',aff:'中国科学院计算技术研究所',
+  journal:'计算机学报',year:'2020',vol:'43(5):755-780',
+  abs:'过去几年，卷积神经网络在欧氏空间数据上取得巨大成功，但现实中大量数据以图形式存在。将卷积迁移到图数据的核心在于图卷积算子和图池化算子的构建。本文综述图卷积神经网络，介绍谱方法和空间方法两类经典方法，以及最新进展和相关应用，最后总结发展趋势。',
+  kw:['图卷积神经网络','卷积','图池化','谱方法','空间方法','GCN','GAT'],
+  pages:[
+    {hd:'计算机学报 2020年第43卷第5期',
+     cnt:`<div class="pdf-title">图卷积神经网络综述</div>
+       <div class="pdf-auth">徐冰冰，岑科廷，黄俊杰，沈华伟，程学旗</div>
+       <div class="pdf-aff">（中国科学院计算技术研究所，北京 100190）</div>
+       <div class="pdf-abs-lbl">摘 要</div>
+       <div class="pdf-abs">过去几年，<span class="ent" data-e="卷积神经网络">卷积神经网络</span>因其强大建模能力引起广泛关注。然而传统CNN只能处理欧氏空间数据，现实中交通网络、社交网络、引用网络等以图数据形式存在。本文对<span class="ent" data-e="图卷积神经网络">图卷积神经网络</span>进行综述，介绍<span class="ent" data-e="谱方法">谱方法</span>和<span class="ent" data-e="空间方法">空间方法</span>两类经典方法、<span class="ent" data-e="图池化">图池化</span>算子、最新进展及应用。</div>
+       <div class="pdf-kw"><b>关键词：</b><span class="ent" data-e="图卷积神经网络">图卷积神经网络</span>；<span class="ent" data-e="卷积">卷积</span>；<span class="ent" data-e="池化">池化</span>；<span class="ent" data-e="GCN">GCN</span>；<span class="ent" data-e="GAT">GAT</span></div>`},
+    {hd:'徐冰冰等：图卷积神经网络综述',
+     cnt:`<div class="pdf-sec">1 引言</div>
+       <div class="pdf-body">近年来，<span class="ent" data-e="深度学习">深度学习</span>在诸多领域取得突破，<span class="ent" data-e="卷积神经网络">卷积神经网络</span>在图像分类、目标检测等CV任务中表现卓越。CNN的成功建立在数据具有平移不变性的基础上。</div>
+       <div class="pdf-body">然而现实中存在大量非欧氏空间数据，以图（Graph）形式存在。图数据的复杂性在于：每个节点邻居数目不固定，节点间无固定顺序，传统<span class="ent" data-e="卷积">卷积</span>操作无法直接应用。<span class="ent" data-e="图神经网络">图神经网络</span>（GNN）正是为解决此问题而提出，其中<span class="ent" data-e="图卷积神经网络">图卷积神经网络</span>（<span class="ent" data-e="GCN">GCN</span>）通过在图上定义卷积算子实现有效特征提取。2017年Kipf和Welling<span class="ref">[1]</span>提出的GCN模型是里程碑工作。</div>
+       <div class="pdf-sub">1.1 图数据的定义与挑战</div>
+       <div class="pdf-body">图表示为G=(V,E)，图数据不规则性带来三方面挑战：平移不变性缺失、节点排列不固定、图结构多样。</div>`},
+    {hd:'徐冰冰等：图卷积神经网络综述',
+     cnt:`<div class="pdf-sec">2 图卷积神经网络方法</div>
+       <div class="pdf-sub">2.1 谱方法</div>
+       <div class="pdf-body"><span class="ent" data-e="谱方法">谱方法</span>借助图信号处理中的卷积定理，在谱域定义图卷积。首先计算<span class="ent" data-e="拉普拉斯矩阵">拉普拉斯矩阵</span>的特征值和特征向量，将图信号变换到谱域卷积后再变换回空域。Bruna等人首次引入谱方法，但需特征分解（O(n³)）。<span class="ent" data-e="ChebNet">ChebNet</span>利用切比雪夫多项式近似避免特征分解。Kipf等人简化提出经典<span class="ent" data-e="GCN">GCN</span>：H^(l+1)=σ(D̃^(-1/2)ÃD̃^(-1/2)H^(l)W^(l))。</div>
+       <div class="pdf-sub">2.2 空间方法</div>
+       <div class="pdf-body"><span class="ent" data-e="空间方法">空间方法</span>直接在节点域定义卷积，通过聚合自身及邻居特征实现。<span class="ent" data-e="GraphSAGE">GraphSAGE</span>通过采样邻居并使用聚合函数实现归纳式学习；<span class="ent" data-e="GAT">GAT</span>引入<span class="ent" data-e="注意力机制">注意力机制</span>为不同邻居分配不同权重。</div>
+       <div class="pdf-sub">2.3 图池化</div>
+       <div class="pdf-body">与CNN中<span class="ent" data-e="池化">池化</span>类似，<span class="ent" data-e="图池化">图池化</span>降低图分辨率、减少计算量。方法包括基于拓扑结构的池化（Graclus、DiffPool）和基于特征的池化（gPool）。</div>`},
+    {hd:'徐冰冰等：图卷积神经网络综述',
+     cnt:`<div class="pdf-sec">3 最新进展</div>
+       <div class="pdf-sub">3.1 注意力机制在GCN中的应用</div>
+       <div class="pdf-body">将<span class="ent" data-e="注意力机制">注意力机制</span>引入GCN是重要方向。<span class="ent" data-e="GAT">GAT</span>通过自注意力计算邻居权重；<span class="ent" data-e="GATv2">GATv2</span>改进注意力函数表达能力；<span class="ent" data-e="AGNN">AGNN</span>在传播中加入注意力。</div>
+       <div class="pdf-sub">3.2 大规模图卷积网络</div>
+       <div class="pdf-body">针对大规模图，提出子图采样（<span class="ent" data-e="GraphSAGE">GraphSAGE</span>邻居采样）、层采样（FastGCN）、图采样（Cluster-GCN）等策略。SGC通过简化计算提高效率。</div>
+       <div class="pdf-sec">4 应用</div>
+       <div class="pdf-sub">4.1 推荐系统</div>
+       <div class="pdf-body"><span class="ent" data-e="GCMC">GCMC</span>将图自编码器用于矩阵补全；<span class="ent" data-e="NGCF">NGCF</span>在用户-物品图上嵌入传播；<span class="ent" data-e="LightGCN">LightGCN</span>简化GCN设计取得优异效果。</div>
+       <div class="pdf-sub">4.2 交通预测</div>
+       <div class="pdf-body"><span class="ent" data-e="STGCN">STGCN</span>用图卷积建空间依赖、一维卷积建时间依赖；<span class="ent" data-e="DCRNN">DCRNN</span>结合扩散卷积和<span class="ent" data-e="GRU">GRU</span>。</div>`},
+    {hd:'徐冰冰等：图卷积神经网络综述',
+     cnt:`<div class="pdf-sub">4.3 其他应用</div>
+       <div class="pdf-body">GCN还广泛应用于分子性质预测、药物发现、蛋白质相互作用等生物信息学任务；NLP中的关系抽取、事件抽取；CV中的场景图生成、点云处理等。</div>
+       <div class="pdf-sec">5 总结与展望</div>
+       <div class="pdf-body">图卷积神经网络作为处理图结构数据的有力工具，已在多领域展现巨大潜力。未来方向包括异质图神经网络、动态图神经网络、可解释性、与预训练语言模型结合、自动化设计（AutoML for GNN）等。</div>
+       <div class="pdf-body" style="margin-top:10px;"><b>参考文献：</b></div>
+       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[1] Kipf T N, Welling M. Semi-supervised classification with graph convolutional networks. ICLR 2017.</div>`}
+  ],
+  chs:[
+    {id:'d2s1',n:'1',t:'引言',subs:[{id:'d2s1_1',n:'1.1',t:'图数据的定义与挑战',es:[]}],es:['深度学习','卷积神经网络','卷积','图神经网络','图卷积神经网络','GCN']},
+    {id:'d2s2',n:'2',t:'图卷积神经网络方法',subs:[
+      {id:'d2s2_1',n:'2.1',t:'谱方法',es:['谱方法','拉普拉斯矩阵','ChebNet','GCN']},
+      {id:'d2s2_2',n:'2.2',t:'空间方法',es:['空间方法','GraphSAGE','GAT','注意力机制']},
+      {id:'d2s2_3',n:'2.3',t:'图池化',es:['池化','图池化']}
+    ],es:[]},
+    {id:'d2s3',n:'3',t:'最新进展',subs:[
+      {id:'d2s3_1',n:'3.1',t:'注意力机制在GCN中的应用',es:['注意力机制','GAT','GATv2','AGNN']},
+      {id:'d2s3_2',n:'3.2',t:'大规模图卷积网络',es:['GraphSAGE']}
+    ],es:[]},
+    {id:'d2s4',n:'4',t:'应用',subs:[
+      {id:'d2s4_1',n:'4.1',t:'推荐系统',es:['GCMC','NGCF','LightGCN']},
+      {id:'d2s4_2',n:'4.2',t:'交通预测',es:['STGCN','DCRNN','GRU']},
+      {id:'d2s4_3',n:'4.3',t:'其他应用',es:[]}
+    ],es:[]},
+    {id:'d2s5',n:'5',t:'总结与展望',subs:[],es:[]}
+  ]
+};
+
+// ---- Paper 3 ----
+const P3={
+  id:'doc3',title:'预训练语言模型研究综述',
+  authors:'邱锡鹏，孙天祥，陈祎琳，丁宁，刘知远',aff:'复旦大学/清华大学',
+  journal:'中国科学：信息科学',year:'2021',vol:'51(9):1437-1464',
+  abs:'近年来，基于大规模语料的预训练语言模型在NLP领域取得巨大成功，已成为基础技术。本文系统综述预训练语言模型研究进展，介绍从静态词向量到上下文相关词向量的发展历程，从表示类型、预训练任务、模型架构等角度分类梳理ELMo、GPT、BERT等代表性模型，总结应用，讨论压缩等优化技术，分析挑战并展望未来方向。',
+  kw:['预训练语言模型','Transformer','BERT','GPT','ELMo','微调','知识蒸馏'],
+  pages:[
+    {hd:'中国科学：信息科学 2021年第51卷第9期',
+     cnt:`<div class="pdf-title">预训练语言模型研究综述</div>
+       <div class="pdf-auth">邱锡鹏，孙天祥，陈祎琳，丁宁，刘知远</div>
+       <div class="pdf-aff">（复旦大学 计算机学院；清华大学 计算机系）</div>
+       <div class="pdf-abs-lbl">摘 要</div>
+       <div class="pdf-abs">近年来，基于大规模语料的<span class="ent" data-e="预训练语言模型">预训练语言模型</span>在NLP领域取得巨大成功，通过在大规模无标注语料上进行<span class="ent" data-e="自监督学习">自监督学习</span>，学习通用语言表示，然后在下游任务<span class="ent" data-e="微调">微调</span>，显著提升性能。本文系统综述预训练语言模型研究进展，分类梳理<span class="ent" data-e="ELMo">ELMo</span>、<span class="ent" data-e="GPT">GPT</span>、<span class="ent" data-e="BERT">BERT</span>等代表性模型，总结应用，讨论<span class="ent" data-e="知识蒸馏">知识蒸馏</span>等优化技术，分析挑战并展望。</div>
+       <div class="pdf-kw"><b>关键词：</b><span class="ent" data-e="预训练语言模型">预训练语言模型</span>；<span class="ent" data-e="Transformer">Transformer</span>；<span class="ent" data-e="BERT">BERT</span>；<span class="ent" data-e="GPT">GPT</span>；<span class="ent" data-e="微调">微调</span>；<span class="ent" data-e="知识蒸馏">知识蒸馏</span></div>`},
+    {hd:'邱锡鹏等：预训练语言模型研究综述',
+     cnt:`<div class="pdf-sec">1 引言</div>
+       <div class="pdf-body">自然语言处理是人工智能重要方向，语言表示是核心问题。早期Word2Vec、GloVe等静态词向量无法解决一词多义问题。</div>
+       <div class="pdf-body">2018年以来预训练语言模型兴起彻底改变了NLP范式。<span class="ent" data-e="ELMo">ELMo</span><span class="ref">[1]</span>使用双向<span class="ent" data-e="LSTM">LSTM</span>获取上下文相关词向量；<span class="ent" data-e="GPT">GPT</span><span class="ref">[2]</span>采用<span class="ent" data-e="Transformer">Transformer</span>解码器自回归预训练；<span class="ent" data-e="BERT">BERT</span><span class="ref">[3]</span>采用Transformer编码器，通过<span class="ent" data-e="掩码语言模型">掩码语言模型</span>实现双向表示，在11项NLP任务上刷新记录。预训练加<span class="ent" data-e="微调">微调</span>成为NLP主流范式。</div>
+       <div class="pdf-sub">1.1 发展历程</div>
+       <div class="pdf-body">发展分为三阶段：静态词向量（Word2Vec、GloVe）、上下文相关词向量（<span class="ent" data-e="ELMo">ELMo</span>、CoVe）、预训练语言模型（<span class="ent" data-e="GPT">GPT</span>、<span class="ent" data-e="BERT">BERT</span>）。</div>`},
+    {hd:'邱锡鹏等：预训练语言模型研究综述',
+     cnt:`<div class="pdf-sec">2 预训练语言模型分类</div>
+       <div class="pdf-sub">2.1 按模型架构分类</div>
+       <div class="pdf-body">根据骨干网络可分为：基于<span class="ent" data-e="LSTM">LSTM</span>的模型（<span class="ent" data-e="ELMo">ELMo</span>）；基于<span class="ent" data-e="Transformer">Transformer</span>编码器的模型（<span class="ent" data-e="BERT">BERT</span>、<span class="ent" data-e="RoBERTa">RoBERTa</span>、<span class="ent" data-e="ALBERT">ALBERT</span>），适用于理解任务；基于Transformer解码器的模型（<span class="ent" data-e="GPT">GPT</span>系列、<span class="ent" data-e="GPT-2">GPT-2</span>、<span class="ent" data-e="GPT-3">GPT-3</span>），擅长生成任务；基于编码器-解码器的模型（T5、BART）。</div>
+       <div class="pdf-sub">2.2 按预训练任务分类</div>
+       <div class="pdf-body">主要预训练任务包括：<span class="ent" data-e="语言模型">语言模型</span>（LM，自回归，代表GPT）；<span class="ent" data-e="掩码语言模型">掩码语言模型</span>（MLM，自编码，代表BERT）；排列语言模型（XLNet）；替换词检测（ELECTRA）等。</div>
+       <div class="pdf-sub">2.3 BERT及其改进</div>
+       <div class="pdf-body"><span class="ent" data-e="BERT">BERT</span>采用多层双向Transformer编码器，使用MLM和NSP两个预训练任务，提供Base（110M参数）和Large（340M参数）两个版本。改进模型包括：<span class="ent" data-e="RoBERTa">RoBERTa</span>（更多数据、去掉NSP）、<span class="ent" data-e="ALBERT">ALBERT</span>（参数共享减少参数）、<span class="ent" data-e="SpanBERT">SpanBERT</span>（Span掩码）、<span class="ent" data-e="ERNIE">ERNIE</span>（知识掩码）、<span class="ent" data-e="XLNet">XLNet</span>（排列语言模型）。</div>`},
+    {hd:'邱锡鹏等：预训练语言模型研究综述',
+     cnt:`<div class="pdf-sec">3 应用</div>
+       <div class="pdf-sub">3.1 自然语言理解</div>
+       <div class="pdf-body">在<span class="ent" data-e="微调">微调</span>阶段添加任务输出层进行端到端训练。文本分类用<[BOS_never_used_51bce0c785ca2f68081bfa7d91973934]>表示；<span class="ent" data-e="命名实体识别">命名实体识别</span>用每个词表示进行序列标注；问答任务预测答案起止位置。<span class="ent" data-e="BERT">BERT</span>在GLUE、SQuAD等基准上取得显著超越之前方法的结果。</div>
+       <div class="pdf-sub">3.2 自然语言生成</div>
+       <div class="pdf-body">基于Transformer解码器的自回归模型（<span class="ent" data-e="GPT">GPT</span>系列）表现优异。<span class="ent" data-e="GPT-2">GPT-2</span>展现零样本生成能力；<span class="ent" data-e="GPT-3">GPT-3</span>（1750亿参数）通过上下文学习展现少样本学习能力。</div>
+       <div class="pdf-sub">3.3 跨领域与多模态</div>
+       <div class="pdf-body">跨领域模型包括BioBERT（生物医学）、SciBERT（科学）等。多模态方向，<span class="ent" data-e="ViT">ViT</span>将Transformer用于图像分类；CLIP通过对比学习对齐图像和文本表示。</div>`},
+    {hd:'邱锡鹏等：预训练语言模型研究综述',
+     cnt:`<div class="pdf-sec">4 模型压缩与优化</div>
+       <div class="pdf-body">大规模模型参数量巨大，难以部署。主要压缩技术：（1）<span class="ent" data-e="知识蒸馏">知识蒸馏</span>：将大模型知识迁移到小模型（DistilBERT、TinyBERT）；（2）模型剪枝：移除不重要权重；（3）权重量化：低比特表示（INT8）；（4）参数共享（<span class="ent" data-e="ALBERT">ALBERT</span>跨层共享）。</div>
+       <div class="pdf-sec">5 挑战与展望</div>
+       <div class="pdf-body">挑战包括：模型效率问题、可解释性不足、常识推理能力弱、偏见与公平性问题。未来方向：超大规模预训练模型（大语言模型）、高效预训练与微调、提示学习、多模态预训练、知识增强、可解释性研究等。以<span class="ent" data-e="GPT-3">GPT-3</span>为代表的大语言模型展示了强大的通用能力，预训练语言模型正朝着更大规模、更多模态、更强能力方向发展。</div>
+       <div class="pdf-body" style="margin-top:10px;"><b>参考文献：</b></div>
+       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[1] Peters M E, et al. Deep contextualized word representations. NAACL 2018.</div>
+       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[2] Radford A, et al. Improving language understanding by generative pre-training. 2018.</div>
+       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[3] Devlin J, et al. BERT: Pre-training of deep bidirectional transformers. NAACL 2019.</div>`}
+  ],
+  chs:[
+    {id:'d3s1',n:'1',t:'引言',subs:[{id:'d3s1_1',n:'1.1',t:'发展历程',es:['ELMo']}],es:['预训练语言模型','ELMo','GPT','BERT','LSTM','Transformer','掩码语言模型','自监督学习','微调']},
+    {id:'d3s2',n:'2',t:'预训练语言模型分类',subs:[
+      {id:'d3s2_1',n:'2.1',t:'按模型架构分类',es:['LSTM','Transformer','BERT','RoBERTa','ALBERT','GPT','GPT-2','GPT-3','ELMo']},
+      {id:'d3s2_2',n:'2.2',t:'按预训练任务分类',es:['语言模型','掩码语言模型']},
+      {id:'d3s2_3',n:'2.3',t:'BERT及其改进',es:['BERT','RoBERTa','ALBERT','SpanBERT','ERNIE','XLNet']}
+    ],es:[]},
+    {id:'d3s3',n:'3',t:'应用',subs:[
+      {id:'d3s3_1',n:'3.1',t:'自然语言理解',es:['微调','命名实体识别','BERT']},
+      {id:'d3s3_2',n:'3.2',t:'自然语言生成',es:['GPT','GPT-2','GPT-3','Transformer']},
+      {id:'d3s3_3',n:'3.3',t:'跨领域与多模态',es:['ViT']}
+    ],es:[]},
+    {id:'d3s4',n:'4',t:'模型压缩与优化',subs:[],es:['知识蒸馏','ALBERT']},
+    {id:'d3s5',n:'5',t:'挑战与展望',subs:[],es:['GPT-3']}
+  ]
+};
+
+const PAPERS={doc1:P1,doc2:P2,doc3:P3};
+
+// ============ BUILD GRAPH DATA ============
+let nodes=[],links=[],nmap={};
+// doc nodes
+['doc1','doc2','doc3'].forEach(d=>{
+  const n={id:d,name:PAPERS[d].title,type:'doc',doc:d,exp:false,vis:true,
+    x:null,y:null,fx:null,fy:null};
+  nodes.push(n);nmap[d]=n;
+});
+// chapters, subsections, entities
+['doc1','doc2','doc3'].forEach(d=>{
+  const p=PAPERS[d];
+  (p.chs||[]).forEach(ch=>{
+    const addCh=(parentId,ch)=>{
+      const hasSub=(ch.subs&&ch.subs.length>0);
+      const hasEnt=(ch.es&&ch.es.length>0);
+      const cn={id:ch.id,name:ch.n+' '+ch.t,type:'ch',doc:d,num:ch.n,exp:false,vis:false};
+      nodes.push(cn);nmap[ch.id]=cn;
+      links.push({source:parentId,target:ch.id,doc:d});
+      if(hasSub){
+        ch.subs.forEach(sub=>addCh(ch.id,sub));
+      }
+      if(hasEnt){
+        const usedInSub=new Set();
+        if(hasSub)ch.subs.forEach(s=>(s.es||[]).forEach(e=>usedInSub.add(e)));
+        ch.es.forEach(e=>{
+          if(usedInSub.has(e))return;
+          const eid=d+'_'+ch.id+'_'+e;
+          if(!nmap[eid]){
+            const en={id:eid,name:e,type:'ent',doc:d,et:entType(e),vis:false};
+            nodes.push(en);nmap[eid]=en;
+          }
+          links.push({source:ch.id,target:eid,doc:d});
+        });
+      }
+    };
+    addCh(d,ch);
+  });
+});
+// cross-doc links
+const enameMap={};
+nodes.filter(n=>n.type==='ent').forEach(n=>{
+  if(!enameMap[n.name])enameMap[n.name]=[];
+  enameMap[n.name].push(n.id);
+});
+Object.entries(enameMap).forEach(([name,ids])=>{
+  if(ids.length>1){
+    for(let i=1;i<ids.length;i++){
+      links.push({source:ids[0],target:ids[i],doc:'cross',cross:true});
+    }
+  }
+});
+
+// ============ RENDER PDF ============
+function renderPDF(){
+  const panel=document.getElementById('pdfPanel');
+  let h='',pn=0;
+  ['doc1','doc2','doc3'].forEach(d=>{
+    const p=PAPERS[d];
+    (p.pages||[]).forEach((pg,idx)=>{
+      pn++;
+      h+=`<div class="pdf-page" id="pg-${d}-${idx}" data-d="${d}" data-p="${idx}">
+        <div class="pdf-hd">${pg.hd}</div>${pg.cnt}
+        <div class="pdf-ft">- ${pn} -</div></div>`;
+    });
+  });
+  panel.innerHTML=h;
+  panel.querySelectorAll('.ent').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const name=el.dataset.e;
+      highlightEntity(name);
+    });
+  });
+}
+
+// ============ RENDER TREE ============
+function renderTree(){
+  const c=document.getElementById('treeContent');
+  let h='';
+  ['doc1','doc2','doc3'].forEach(d=>{
+    const p=PAPERS[d];
+    const docHasCh=(p.chs&&p.chs.length>0);
+    h+=`<div class="tn" data-n="${d}"><div class="tn-c" data-n="${d}">
+      <span class="tn-arrow${docHasCh?'':' hidden'}"></span>
+      <span class="tn-icon" style="color:${COLORS[d]}"><i class="idoc"></i></span>
+      <span class="tn-label">${p.title}</span></div>
+      <div class="tn-children" data-p="${d}">`;
+    (p.chs||[]).forEach(ch=>{
+      const chHasSub=(ch.subs&&ch.subs.length>0);
+      const chHasEnt=(ch.es&&ch.es.length>0);
+      h+=`<div class="tn" data-n="${ch.id}"><div class="tn-c" data-n="${ch.id}">
+        <span class="tn-arrow${(chHasSub||chHasEnt)?'':' hidden'}"></span>
+        <span class="tn-icon" style="color:#dd6b20"><i class="ich"></i></span>
+        <span class="tn-label">${ch.n} ${ch.t}</span></div>
+        <div class="tn-children" data-p="${ch.id}">`;
+      if(chHasSub){
+        ch.subs.forEach(sub=>{
+          const subHasEnt=(sub.es&&sub.es.length>0);
+          h+=`<div class="tn" data-n="${sub.id}"><div class="tn-c" data-n="${sub.id}">
+            <span class="tn-arrow${subHasEnt?'':' hidden'}"></span>
+            <span class="tn-icon" style="color:#ed8936"><i class="ich"></i></span>
+            <span class="tn-label">${sub.n} ${sub.t}</span></div>
+            <div class="tn-children" data-p="${sub.id}">`;
+          if(subHasEnt){
+            [...new Set(sub.es)].sort((a,b)=>a.localeCompare(b,'zh')).forEach(e=>{
+              const eid=d+'_'+sub.id+'_'+e;
+              h+=`<div class="tn" data-n="${eid}"><div class="tn-c" data-n="${eid}">
+                <span class="tn-arrow hidden"></span>
+                <span class="tn-icon" style="color:${entColor(e)}"><i class="ient"></i></span>
+                <span class="tn-label">${e}</span></div></div>`;
+            });
+          }
+          h+=`</div></div>`;
+        });
+      }
+      if(chHasEnt){
+        const used=new Set();
+        if(chHasSub)ch.subs.forEach(s=>(s.es||[]).forEach(e=>used.add(e)));
+        const direct=ch.es.filter(e=>!used.has(e));
+        [...new Set(direct)].sort((a,b)=>a.localeCompare(b,'zh')).forEach(e=>{
+          const eid=d+'_'+ch.id+'_'+e;
+          h+=`<div class="tn" data-n="${eid}"><div class="tn-c" data-n="${eid}">
+            <span class="tn-arrow hidden"></span>
+            <span class="tn-icon" style="color:${entColor(e)}"><i class="ient"></i></span>
+            <span class="tn-label">${e}</span></div></div>`;
+        });
+      }
+      h+=`</div></div>`;
+    });
+    h+=`</div></div>`;
+  });
+  c.innerHTML=h;
+  c.querySelectorAll('.tn-c').forEach(el=>{
+    let clkT=null;
+    el.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(clkT){clearTimeout(clkT);clkT=null;return;}
+      const nid=el.dataset.n;
+      const n=nmap[nid];
+      clkT=setTimeout(()=>{
+        clkT=null;
+        // entity nodes: select in graph, don't toggle
+        if(n&&n.type==='ent'){
+          if(!n.vis){
+            // expand all parent chapters to make entity visible
+            ensureExp(nid);
+            // ensureExp calls expandGraph on parents which sets vis=true for children
+            if(!n.vis){n.vis=true;updGraph();}
+          }
+          setTimeout(()=>selN(n),n.vis?0:150);
+        }else{
+          togNode(nid);
+        }
+      },200);
+    });
+    el.addEventListener('dblclick',e=>{
+      e.stopPropagation();
+      if(clkT){clearTimeout(clkT);clkT=null;}
+      jumpPDF(el.dataset.n);
+    });
+  });
+}
+
+// ============ LEGEND ============
+function renderLegend(){
+  const el=document.getElementById('legend');
+  let h='';
+  ['doc1','doc2','doc3'].forEach(d=>{
+    h+=`<div class="legend-item active" data-d="${d}">
+      <span class="legend-dot" style="background:${COLORS[d]}"></span>
+      <span>${DOCNAMES[d]}</span></div>`;
+  });
+  el.innerHTML=h;
+  let hlDoc=null;
+  el.querySelectorAll('.legend-item').forEach(li=>{
+    li.addEventListener('click',()=>{
+      const d=li.dataset.d;
+      if(hlDoc===d){hlDoc=null;el.querySelectorAll('.legend-item').forEach(x=>x.classList.add('active'));}
+      else{hlDoc=d;el.querySelectorAll('.legend-item').forEach(x=>x.classList.remove('active'));li.classList.add('active');}
+      window._hlDoc=hlDoc;
+      updGraph();
+    });
+  });
+}
+
+// ============ TREE TOGGLE ============
+function togNode(nid){
+  const n=nmap[nid];if(!n)return;
+  const cd=document.querySelector(`.tn-children[data-p="${nid}"]`);
+  const ar=document.querySelector(`.tn-c[data-n="${nid}"] .tn-arrow`);
+  if(!cd)return;
+  if(cd.classList.contains('show')){
+    cd.classList.remove('show');
+    if(ar)ar.classList.remove('exp');
+    n.exp=false;
+    collapseGraph(nid);
+  }else{
+    cd.classList.add('show');
+    if(ar)ar.classList.add('exp');
+    n.exp=true;
+    expandGraph(nid);
+  }
+}
+function expandGraph(pid){
+  links.forEach(l=>{
+    const sid=typeof l.source==='object'?l.source.id:l.source;
+    if(sid===pid){
+      const tid=typeof l.target==='object'?l.target.id:l.target;
+      const c=nmap[tid];
+      if(c&&!c.vis){c.vis=true;c.fx=null;c.fy=null;}
+    }
+  });
+  updGraph();
+}
+function collapseGraph(pid){
+  function col(id){
+    links.forEach(l=>{
+      const sid=typeof l.source==='object'?l.source.id:l.source;
+      if(sid===id){
+        const tid=typeof l.target==='object'?l.target.id:l.target;
+        const c=nmap[tid];
+        if(c&&c.type!=='doc'){
+          c.vis=false;c.exp=false;c.x=null;c.y=null;c.fx=null;c.fy=null;
+          const cd=document.querySelector(`.tn-children[data-p="${tid}"]`);
+          if(cd)cd.classList.remove('show');
+          const ar=document.querySelector(`.tn-c[data-n="${tid}"] .tn-arrow`);
+          if(ar)ar.classList.remove('exp');
+          col(tid);
+        }
+      }
+    });
+  }
+  col(pid);updGraph();
+}
+
+// ============ D3 GRAPH ============
+let sim,svg,g,linkSel,nodeSel,selNode=null;
+let GW=0,GH=0;
+function initGraph(){
+  const panel=document.getElementById('graphPanel');
+  GW=panel.clientWidth,GH=panel.clientHeight;
+  svg=d3.select('#gsvg').attr('width',GW).attr('height',GH);
+  const zm=d3.zoom().scaleExtent([.25,3]).on('zoom',e=>g.attr('transform',e.transform));
+  svg.call(zm);
+  // dot grid
+  const defs=svg.append('defs');
+  defs.append('pattern').attr('id','grid').attr('width',20).attr('height',20)
+    .attr('patternUnits','userSpaceOnUse')
+    .append('circle').attr('cx',10).attr('cy',10).attr('r',.8).attr('fill','#edf2f7');
+  svg.append('rect').attr('width','100%').attr('height','100%').attr('fill','url(#grid)');
+  g=svg.append('g');
+  // position doc nodes in flat triangle - adapt to panel size
+  const docNodes=nodes.filter(n=>n.type==='doc');
+  const cx=GW/2,cy=GH/2;
+  // scale offsets based on available space
+  const margin=70; // leave room for chapters+labels
+  const maxOffX=GW/2-margin;
+  const maxOffY=GH/2-margin;
+  const offX=Math.min(GW*0.18,maxOffX);
+  const offY=Math.min(GH*0.18,maxOffY);
+  const positions=[
+    {x:cx,y:cy-offY-10},       // doc1 (red) top
+    {x:cx+offX,y:cy+offY*0.6}, // doc2 (blue) bottom-right
+    {x:cx-offX,y:cy+offY*0.6}  // doc3 (green) bottom-left
+  ];
+  docNodes.forEach((dn,i)=>{
+    dn.x=positions[i].x;
+    dn.y=positions[i].y;
+    dn.fx=dn.x;dn.fy=dn.y;
+    dn._pinX=dn.x;dn._pinY=dn.y;
+  });
+  sim=d3.forceSimulation(nodes.filter(n=>n.vis))
+    .force('link',d3.forceLink(links.filter(l=>{
+      const sid=typeof l.source==='object'?l.source.id:l.source,tid=typeof l.target==='object'?l.target.id:l.target;
+      return nmap[sid]&&nmap[sid].vis&&nmap[tid]&&nmap[tid].vis;
+    })).id(d=>d.id).distance(l=>{
+      if(l.cross)return Math.min(200,GW*0.45);
+      const tn=nmap[typeof l.target==='object'?l.target.id:l.target];
+      if(tn&&tn.type==='ch')return Math.min(75,GW*0.2);
+      return Math.min(45,GW*0.12);
+    }).strength(l=>l.cross?.05:.75))
+    .force('charge',d3.forceManyBody().strength(d=>d.type==='doc'?-600:-200).distanceMax(300))
+    .force('collide',d3.forceCollide().radius(d=>nrad(d)+(d.type==='ch'?18:12)).strength(.95))
+    .force('center',d3.forceCenter(GW/2,GH/2).strength(.05))
+    .force('pin',()=>{
+      nodes.forEach(n=>{
+        if(n._pinX!=null){n.x=n._pinX;n.y=n._pinY;n.fx=n._pinX;n.fy=n._pinY;}
+      });
+    });
+  // boundary force - clamp nodes within visible area
+  sim.force('bounds',()=>{
+    const pad=35;
+    nodes.forEach(n=>{
+      if(n.type==='doc')return; // fixed
+      const r=nrad(n)+15;
+      if(n.x<pad+r)n.x=pad+r;
+      if(n.x>GW-pad-r)n.x=GW-pad-r;
+      if(n.y<pad+r)n.y=pad+r;
+      if(n.y>GH-pad-r-20)n.y=GH-pad-r-20; // leave room for tip bar
+    });
+  });
+  updGraph();
+  window.addEventListener('resize',()=>{
+    const w=panel.clientWidth,h=panel.clientHeight;
+    GW=w;GH=h;
+    svg.attr('width',w).attr('height',h);
+    sim.alpha(.3).restart();
+  });
+  // click empty to deselect
+  svg.on('click',()=>{selNode=null;linkSel&&linkSel.classed('hl',false);
+    document.querySelectorAll('.tn-c').forEach(x=>x.classList.remove('sel'));});
+}
+function findParentNode(n){
+  for(const l of links){
+    const tid=typeof l.target==='object'?l.target.id:l.target;
+    if(tid===n.id){
+      const sid=typeof l.source==='object'?l.source.id:l.source;
+      return nmap[sid];
+    }
+  }
+  return null;
+}
+function nrad(d){if(d.type==='doc')return 28;if(d.type==='ch')return 10;return 5;}
+function ncol(d){
+  const hl=window._hlDoc;
+  if(d.type==='doc'){
+    if(hl&&d.doc!==hl)return '#edf2f7';
+    return COLORS[d.doc];
+  }
+  if(d.type==='ch'){
+    if(hl&&d.doc!==hl)return '#f0f4f8';
+    const c=d3.color(COLORS[d.doc]);return c.brighter(.5);
+  }
+  if(d.type==='ent'){
+    if(hl&&d.doc!==hl)return '#f0f4f8';
+    return entColor(d.name);
+  }
+  return '#a0aec0';
+}
+function updGraph(){
+  if(!sim)return;
+  const vN=nodes.filter(n=>n.vis);
+  // place newly visible nodes near their parent
+  const newByParent={};
+  vN.forEach(n=>{
+    if(n.type==='doc')return;
+    if(n.x!=null&&!isNaN(n.x))return; // already placed
+    const par=findParentNode(n);
+    if(par){
+      const pid=par.id;
+      if(!newByParent[pid])newByParent[pid]=[];
+      newByParent[pid].push(n);
+    }
+  });
+  // also count existing visible children per parent to offset angles
+  Object.entries(newByParent).forEach(([pid,newChildren])=>{
+    const par=nmap[pid];
+    // count existing visible siblings
+    let existingCount=0;
+    links.forEach(l=>{
+      const sid=typeof l.source==='object'?l.source.id:l.source;
+      if(sid===pid){
+        const tid=typeof l.target==='object'?l.target.id:l.target;
+        const cn=nmap[tid];
+        if(cn&&cn.vis&&cn.x!=null&&!isNaN(cn.x)&&!newChildren.includes(cn))existingCount++;
+      }
+    });
+    const totalCount=existingCount+newChildren.length;
+    newChildren.forEach((n,i)=>{
+        const chRad=Math.min(65,GW*0.18);
+        const radius=n.type==='ch'?chRad:chRad*0.55;
+        const angle=-Math.PI/2+((existingCount+i)/totalCount)*Math.PI*2;
+        n.x=par.x+Math.cos(angle)*radius;
+        n.y=par.y+Math.sin(angle)*radius;
+      });
+  });
+  // fallback for any nodes without position
+  vN.forEach(n=>{
+    if(n.x==null||isNaN(n.x)){
+      n.x=GW/2+(Math.random()-.5)*80;
+      n.y=GH/2+(Math.random()-.5)*80;
+    }
+  });
+  const vL=links.filter(l=>{
+    const sid=typeof l.source==='object'?l.source.id:l.source,tid=typeof l.target==='object'?l.target.id:l.target;
+    return nmap[sid]&&nmap[sid].vis&&nmap[tid]&&nmap[tid].vis;
+  });
+  sim.nodes(vN);sim.force('link').links(vL);sim.alpha(.6).restart();
+  linkSel=g.selectAll('.link').data(vL,d=>(typeof d.source==='object'?d.source.id:d.source)+'-'+(typeof d.target==='object'?d.target.id:d.target));
+  linkSel.exit().remove();
+  const le=linkSel.enter().append('line').attr('class',d=>'link'+(d.cross?' cross':''));
+  linkSel=le.merge(linkSel);
+
+  nodeSel=g.selectAll('.node').data(vN,d=>d.id);
+  nodeSel.exit().remove();
+  const ne=nodeSel.enter().append('g').attr('class',d=>'node node-'+d.type)
+    .call(d3.drag().on('start',dragS).on('drag',dragM).on('end',dragE))
+    .on('click',(e,d)=>{
+      e.stopPropagation();
+      // delayed click to avoid conflict with dblclick
+      if(d._clkT){clearTimeout(d._clkT);}
+      d._clkT=setTimeout(()=>{
+        if(d.type==='doc'||d.type==='ch'){
+          togNode(d.id);
+        }
+        selN(d);
+        d._clkT=null;
+      },220);
+    })
+    .on('dblclick',(e,d)=>{
+      e.stopPropagation();
+      if(d._clkT){clearTimeout(d._clkT);d._clkT=null;}
+      jumpPDF(d.id);
+    })
+    .on('mouseover',(e,d)=>showTip(e,d)).on('mouseout',hideTip);
+
+  ne.filter(d=>d.type==='doc').append('rect')
+    .attr('width',d=>nrad(d)*2.2).attr('height',d=>nrad(d)*2.2)
+    .attr('x',d=>-nrad(d)*1.1).attr('y',d=>-nrad(d)*1.1).attr('rx',6)
+    .attr('fill',d=>ncol(d)).attr('stroke',d=>d3.color(ncol(d)).darker(.5))
+    .attr('stroke-width',1.5);
+  ne.filter(d=>d.type!=='doc').append('circle')
+    .attr('r',d=>nrad(d)).attr('fill',d=>ncol(d))
+    .attr('stroke',d=>d.type==='ch'?d3.color(ncol(d)).darker(.5):'#fff')
+    .attr('stroke-width',d=>d.type==='ch'?1.5:1.5);
+  // doc inner label
+  ne.filter(d=>d.type==='doc').append('text')
+    .attr('class','nlabel-doc-inner')
+    .attr('dy',5)
+    .attr('fill','#fff')
+    .style('font-size','11px')
+    .style('font-weight','700')
+    .style('pointer-events','none')
+    .style('text-anchor','middle')
+    .text(d=>{
+      if(d.doc==='doc1')return '注意力';
+      if(d.doc==='doc2')return '图卷积';
+      return '预训练';
+    });
+  // outer labels with white background
+  ne.append('text').attr('class','nlabel')
+    .attr('dy',d=>{
+      if(d.type==='doc')return nrad(d)*1.1+14;
+      return nrad(d)+11;
+    })
+    .style('font-size',d=>d.type==='doc'?'11px':'10px')
+    .style('font-weight',d=>d.type==='doc'?'600':'400')
+    .style('fill',d=>d.type==='doc'?'#2d3748':'#4a5568')
+    .style('text-anchor','middle')
+    .style('pointer-events','none')
+    .text(d=>{
+      if(d.type==='doc'){
+        return DOCSHORT[d.doc];
+      }
+      if(d.type==='ent')return d.name.length>6?d.name.substring(0,5)+'…':d.name;
+      // chapter: show "N 标题" but truncate long titles
+      const parts=d.name.split(' ');
+      if(parts.length>=2){
+        const num=parts[0],title=parts.slice(1).join(' ');
+        return title.length>5?num+' '+title.substring(0,5)+'…':d.name;
+      }
+      return d.name.length>7?d.name.substring(0,6)+'…':d.name;
+    });
+  nodeSel=ne.merge(nodeSel);
+  nodeSel.selectAll('rect').attr('fill',d=>ncol(d)).attr('stroke',d=>{
+    const hl=window._hlDoc;
+    if(hl&&d.doc!==hl)return '#e2e8f0';
+    return d3.color(ncol(d)).darker(.5);
+  });
+  nodeSel.selectAll('circle').attr('fill',d=>ncol(d)).attr('stroke',d=>{
+    const hl=window._hlDoc;
+    if(hl&&d.doc!==hl)return '#f0f4f8';
+    return d.type==='ch'?d3.color(ncol(d)).darker(.5):'#fff';
+  });
+  nodeSel.selectAll('.nlabel').style('fill',d=>{
+    const hl=window._hlDoc;
+    if(hl&&d.doc!==hl&&!d.cross)return '#cbd5e0';
+    return d.type==='doc'?'#2d3748':'#4a5568';
+  });
+  // update link opacity based on highlight
+  linkSel.classed('dim',l=>{
+    const hl=window._hlDoc;
+    if(!hl)return false;
+    const sid=typeof l.source==='object'?l.source.id:l.source;
+    const tid=typeof l.target==='object'?l.target.id:l.target;
+    const sdoc=nmap[sid]?.doc,tdoc=nmap[tid]?.doc;
+    return sdoc!==hl&&tdoc!==hl;
+  });
+
+  sim.on('tick',()=>{
+    linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+    nodeSel.attr('transform',d=>`translate(${d.x},${d.y})`);
+  });
+}
+function selN(d){
+  selNode=d;
+  linkSel.classed('hl',l=>{
+    const sid=typeof l.source==='object'?l.source.id:l.source,tid=typeof l.target==='object'?l.target.id:l.target;
+    return sid===d.id||tid===d.id;
+  });
+  document.querySelectorAll('.tn-c').forEach(x=>x.classList.remove('sel'));
+  const te=document.querySelector(`.tn-c[data-n="${d.id}"]`);
+  if(te){te.classList.add('sel');te.scrollIntoView({block:'nearest',behavior:'smooth'});}
+}
+function showTip(e,d){
+  const t=document.getElementById('ttip');
+  let info='';
+  if(d.type==='doc'){info=`<b>${PAPERS[d.doc].title}</b><br>${PAPERS[d.doc].journal} (${PAPERS[d.doc].year})<br>${PAPERS[d.doc].authors}`;}
+  else if(d.type==='ch'){info=`<b>${d.name}</b><br>来自：${PAPERS[d.doc].title.substring(0,10)}…`;}
+  else{const tn={model:'模型',method:'方法',other:'其他'};
+    info=`<b>${d.name}</b><br>类型：${tn[d.et]||'其他'}<br>来自：${PAPERS[d.doc].title.substring(0,10)}…`;}
+  t.innerHTML=info;t.style.opacity='1';
+  const gr=document.getElementById('graphPanel').getBoundingClientRect();
+  t.style.left=(e.clientX-gr.left+12)+'px';t.style.top=(e.clientY-gr.top+12)+'px';
+}
+function hideTip(){document.getElementById('ttip').style.opacity='0';}
+function dragS(e,d){if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;}
+function dragM(e,d){d.fx=e.x;d.fy=e.y;}
+function dragE(e,d){
+  if(!e.active)sim.alphaTarget(0);
+  if(d.type!=='doc'){d.fx=null;d.fy=null;} // release non-doc nodes
+}
+
+// ============ JUMP TO PDF ============
+function jumpPDF(nid){
+  const n=nmap[nid];if(!n)return;
+  const d=n.doc;let tidx=0;
+  if(n.type!=='doc'){
+    const num=n.num;const p=PAPERS[d];
+    for(let i=0;i<p.pages.length;i++){
+      if(p.pages[i].cnt.includes('>'+num+' ')||p.pages[i].cnt.includes('>'+num+'<')){tidx=i;break;}
+    }
+  }
+  const el=document.getElementById(`pg-${d}-${tidx}`);
+  if(el){
+    el.scrollIntoView({behavior:'smooth',block:'start'});
+    el.style.boxShadow='0 0 0 3px #4299e1, 0 2px 10px rgba(0,0,0,.12)';
+    setTimeout(()=>{el.style.boxShadow='';},1500);
+  }
+}
+
+// ============ HIGHLIGHT ENTITY FROM PDF ============
+function highlightEntity(name){
+  // find visible entity node, or expand to find it
+  const en=nodes.find(n=>n.type==='ent'&&n.name===name&&n.vis);
+  if(en){
+    ensureExp(en.id);selN(en);
+    if(en.x&&en.y){
+      const p=document.getElementById('graphPanel');
+      const tx=p.clientWidth/2-en.x,ty=p.clientHeight/2-en.y;
+      svg.transition().duration(400).call(d3.zoom().transform,d3.zoomIdentity.translate(tx,ty).scale(1));
+    }
+    // highlight in PDF
+    document.querySelectorAll('.pdf-page .ent').forEach(e=>e.classList.toggle('hl',e.dataset.e===name));
+    // select in tree
+    document.querySelectorAll('.tn-c').forEach(x=>x.classList.remove('sel'));
+    document.querySelectorAll('.tn-c').forEach(x=>{
+      const lbl=x.querySelector('.tn-label');
+      if(lbl&&lbl.textContent===name){
+        x.classList.add('sel');
+        let par=x.closest('.tn-children');
+        while(par){par.classList.add('show');
+          const pid=par.dataset.p;
+          const ar=document.querySelector(`.tn-c[data-n="${pid}"] .tn-arrow`);
+          if(ar)ar.classList.add('exp');
+          if(nmap[pid])nmap[pid].exp=true;
+          par=par.parentElement.closest('.tn-children');
+        }
+      }
+    });
+  }else{
+    // entity not visible - find which doc/chapter contains it and expand
+    let expanded=false;
+    ['doc1','doc2','doc3'].forEach(d=>{
+      const p=PAPERS[d];
+      const dn=nmap[d];
+      (p.chs||[]).forEach(ch=>{
+        let inCh=(ch.es||[]).includes(name);
+        let inSub=false;
+        if(!inCh&&ch.subs){
+          ch.subs.forEach(s=>{if((s.es||[]).includes(name))inSub=true;});
+        }
+        if(inCh||inSub){
+          if(!dn.exp){togNode(d.id);expanded=true;}
+          // also expand the specific chapter
+          const chn=nmap[ch.id];
+          if(chn&&!chn.exp){
+            setTimeout(()=>{
+              if(!chn.exp)togNode(ch.id);
+            },expanded?300:0);
+            expanded=true;
+          }
+        }
+      });
+    });
+    setTimeout(()=>highlightEntity(name),expanded?350:100);
+  }
+}
+function ensureExp(nid){
+  links.forEach(l=>{
+    const tid=typeof l.target==='object'?l.target.id:l.target;
+    if(tid===nid){
+      const sid=typeof l.source==='object'?l.source.id:l.source;
+      const par=nmap[sid];
+      if(par&&!par.exp){
+        const cd=document.querySelector(`.tn-children[data-p="${sid}"]`);
+        const ar=document.querySelector(`.tn-c[data-n="${sid}"] .tn-arrow`);
+        if(cd&&!cd.classList.contains('show')){cd.classList.add('show');if(ar)ar.classList.add('exp');par.exp=true;}
+        par.vis=true;expandGraph(sid);ensureExp(sid);
+      }
+    }
+  });
+}
+
+// ============ RESIZERS ============
+function initRsz(){
+  const tp=document.getElementById('treePanel'),gp=document.getElementById('graphPanel'),pp=document.getElementById('pdfPanel');
+  const r1=document.getElementById('rz1'),r2=document.getElementById('rz2');
+  function mk(rs,lp,rp,isR){
+    let sx,slw,srw,sgw;
+    rs.addEventListener('mousedown',e=>{
+      rs.classList.add('drag');sx=e.clientX;
+      slw=lp.getBoundingClientRect().width;srw=rp.getBoundingClientRect().width;sgw=gp.getBoundingClientRect().width;
+      document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);e.preventDefault();
+    });
+    function mv(e){
+      const dx=e.clientX-sx;
+      if(!isR){lp.style.width=Math.max(200,slw+dx)+'px';}
+      else{pp.style.width=Math.max(280,srw-dx)+'px';}
+      const w=gp.clientWidth,h=gp.clientHeight;
+      svg.attr('width',w).attr('height',h);sim.force('center',d3.forceCenter(w/2,h/2));sim.alpha(.2).restart();
+    }
+    function up(){rs.classList.remove('drag');document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);}
+  }
+  mk(r1,tp,gp,false);mk(r2,gp,pp,true);
+}
+
+// ============ INIT ============
+document.addEventListener('DOMContentLoaded',()=>{
+  renderPDF();renderTree();renderLegend();initGraph();initRsz();
+  // release doc fixed positions after initial layout
+  setTimeout(()=>{
+    nodes.forEach(n=>{if(n.type==='doc'){n.fx=null;n.fy=null;}sim.alpha(.3).restart();});
+  },2000);
+});
+</script>
+</body>
+</html>

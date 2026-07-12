@@ -80,14 +80,20 @@ export class KnowledgeGraph {
     const existing = this.edges.get(key);
     if (existing) {
       existing.weight = Math.max(existing.weight, edge.weight);
-      // 合并 evidence
-      existing.evidence = { ...existing.evidence, ...edge.evidence };
+      // 合并 evidence（过滤 undefined 值，避免覆盖已有数据）
+      if (edge.evidence) {
+        const cleanEvidence = Object.fromEntries(
+          Object.entries(edge.evidence).filter(([, v]) => v !== undefined)
+        );
+        existing.evidence = { ...existing.evidence, ...cleanEvidence };
+      }
       // 边在原地更新，邻接表缓存的引用仍指向同一对象，无需失效
+      return existing;
     } else {
       this.edges.set(key, edge);
       this._invalidateAdjacency();
+      return edge;
     }
-    return edge;
   }
 
   removeEdge(from, to, type) {

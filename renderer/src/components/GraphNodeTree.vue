@@ -55,6 +55,7 @@
               :key="node.id"
               class="node-item"
               :class="{ 'node-item--active': isSelected(node) }"
+              :style="{ '--node-color': group.color }"
               @click="selectNode(node)"
             >
               <span class="node-bar" :style="{ background: group.color }"></span>
@@ -105,6 +106,8 @@ const TYPE_COLORS = {
   entity: '#06b6d4',    // cyan — 实体节点
   document: '#64748b',  // slate — 文档节点
   idea: '#f43f5e',      // rose — 灵感节点
+  heading: '#3b82f6',   // blue — 标题节点
+  manual: '#14b8a6',    // teal — 手册节点
   other: '#f43f5e',
 }
 const TYPE_LABELS = {
@@ -115,9 +118,11 @@ const TYPE_LABELS = {
   entity: '实体',
   document: '文档',
   idea: '灵感',
+  heading: '标题',
+  manual: '手册',
   other: '其他',
 }
-const TYPE_ORDER = ['entity', 'document', 'idea', 'concept', 'method', 'theorem', 'term', 'other']
+const TYPE_ORDER = ['entity', 'document', 'heading', 'idea', 'concept', 'method', 'theorem', 'term', 'manual', 'other']
 
 function colorFor(type) {
   return TYPE_COLORS[type] || TYPE_COLORS.other
@@ -166,7 +171,7 @@ const groups = computed(() => {
 
 // ===== Helpers =====
 function nodeLabel(node) {
-  return node.label || node.name || node.id || '未命名'
+  return node.content || node.label || node.name || node.id || '未命名'
 }
 function specificityText(node) {
   const s = Number(node.specificity)
@@ -313,12 +318,40 @@ function selectNode(node) {
   gap: 8px;
   padding: 5px 14px 5px 22px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
   position: relative;
+  border-radius: 0 8px 8px 0;
+  margin-right: 6px;
 }
-.node-item:hover { background: var(--bg-hover); }
-.node-item--active { background: var(--accent-dim); }
-.node-item--active .node-name { color: var(--text); font-weight: 500; }
+.node-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 0;
+  background: var(--node-color, var(--accent));
+  border-radius: 0 3px 3px 0;
+  transition: height 0.2s ease;
+}
+.node-item:hover {
+  background: var(--bg-hover);
+  transform: translateX(3px);
+}
+.node-item--active {
+  background: rgba(6, 182, 212, 0.14);
+  transform: translateX(5px) scale(1.02);
+  box-shadow: 0 2px 12px rgba(6, 182, 212, 0.22),
+              0 0 0 1px rgba(6, 182, 212, 0.10);
+}
+.node-item--active::before {
+  height: 70%;
+}
+.node-item--active .node-name {
+  color: var(--text);
+  font-weight: 700;
+}
 
 .node-bar {
   width: 3px;
@@ -326,8 +359,14 @@ function selectNode(node) {
   border-radius: 2px;
   flex-shrink: 0;
   opacity: 0.7;
+  transition: opacity 0.18s ease, height 0.18s ease, box-shadow 0.18s ease;
 }
-.node-item--active .node-bar { opacity: 1; box-shadow: 0 0 6px currentColor; }
+.node-item:hover .node-bar { opacity: 0.9; }
+.node-item--active .node-bar {
+  opacity: 1;
+  height: 18px;
+  box-shadow: 0 0 8px var(--node-color, currentColor);
+}
 
 .node-name {
   flex: 1;
@@ -336,7 +375,7 @@ function selectNode(node) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: color 0.12s;
+  transition: color 0.18s ease, font-weight 0.18s ease;
 }
 
 .node-badge {
@@ -348,6 +387,10 @@ function selectNode(node) {
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
   line-height: 1.4;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.node-item--active .node-badge {
+  transform: scale(1.05);
 }
 
 /* collapse transition */

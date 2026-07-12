@@ -4,6 +4,53 @@
 
 ---
 
+## [2.2.0] — 2026-07-03
+
+### UI 重构 + 工程化 + 大量 Bug 修复
+
+#### 新增
+
+- **3 工作流导航**：从 4 标签页改为"文献 / 图谱 / 灵感"3 工作流 + 设置覆盖层
+- **图谱可视化重构**：方形节点 + 颜色分层（文档/标题/概念/实体/灵感）+ 手动增删边 + 右键编辑节点 + 展开/收起动画
+- **应用图标**：自动生成多平台图标（PNG/ICO/ICNS）
+- **跨平台构建**：electron-builder 配置 Windows/macOS/Linux 三平台目标
+- **生产就绪文件**：LICENSE、CONTRIBUTING.md、.env.example
+- **README 全面重写**：配置指南、使用指南、故障排查、多平台安装说明
+- **CSP 运行时白名单**：LLM 配置变更时动态更新 CSP connect-src 白名单
+
+#### 修复（90+ 个 Bug）
+
+- **LLM 解析器**：JSON 对象 `{terms:[...]}` 解析时 candidates 赋为对象导致 `.map()` 崩溃 → 智能提取 terms/keywords 数组
+- **LLM 术语过滤**：短文本 `minFullTextCount=2` 过于严格 → 短文本放宽到 1 次
+- **switchProject 竞态**：TOCTOU 竞态条件 → 在任何 await 之前设置并发锁
+- **embedding provider 切换**：不清除向量库缓存导致维度不匹配 → 切换时自动 clear
+- **embedding 维度检测**：无维度一致性校验 → 添加 expectedDimension 记录和校验
+- **PDF 逐页错误恢复**：单页异常中断整个解析 → 每页 try-catch 跳过失败页
+- **OCR 预览累积器**：无界增长 → 滑动窗口限制 4000 字符
+- **vector-store 原子写入**：非原子写入导致损坏 → temp+rename 模式
+- **createEdge 自环检测**：缺少 from===to 检查
+- **updateEdge 冲突逻辑**：type 未传时误判自身为冲突 → matchedSet 排除自身
+- **管线 fallback 覆盖**：catch 块用 `=` 覆盖 full-extract 已成功结果 → 仅在空时填充
+- **单文档失败**：一个文档异常中断整批 → per-document try-catch
+- **matcher undefined 匹配**：`undefined === undefined` 导致错误 graph 分数
+- **空数组 sections**：文档被静默跳过 → `.length > 0` 检查
+- **匹配权重归一化**：权重总和不为 1 时分数可超 1.0
+- **前端 Escape 键**：SettingsOverlay 和确认对话框无 Escape 关闭
+- **IdeaPanel 引用同步**：保存后 selectedIdea 失效 → 同步更新引用
+- **ModelLab provider 切换**：未重置 model/apiKey
+- **右键菜单边缘定位**：菜单超出画布边界 → 边界裁剪
+- **Electron backendStopped**：重启后不重置导致退出时跳过清理
+- **Ollama 安装器**：硬编码 Windows → 按平台分支
+- **python3 回退**：Mac/Linux 无 python → 先试 python3 再回退
+
+#### 改进
+
+- .gitignore 补充 debug-output*/、state/、.uploads/ 等
+- package.json 补充 keywords/repository/homepage/bugs 字段
+- test 脚本添加容错（无 tests 目录时跳过）
+
+---
+
 ## [2.1.0] — 2026-06-28
 
 ### 提示词系统重构

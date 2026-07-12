@@ -4,8 +4,9 @@
  *  - PersistedMemoryVectorStore：内存索引 + JSON 文件持久化，无原生依赖，可打包到 Electron
  */
 
-import { readFile, writeFile, unlink } from 'fs/promises';
+import { readFile, writeFile, rename, unlink, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
+import { dirname, join } from 'path';
 
 // 内存向量库
 class MemoryVectorStore {
@@ -86,7 +87,12 @@ class PersistedMemoryVectorStore {
         version: 1,
         vectors: Array.from(this.vectors.values()).map(({ id, vec, meta }) => ({ id, vec, meta }))
       };
-      await writeFile(this.filePath, JSON.stringify(payload), 'utf-8');
+      // 原子写入：先写临时文件，再重命名覆盖目标文件
+      // 避免写入过程中崩溃导致数据文件损坏
+      const tmpFile = this.filePath + '.tmp';
+      await mkdir(dirname(this.filePath), { recursive: true });
+      await writeFile(tmpFile, JSON.stringify(payload), 'utf-8');
+      await rename(tmpFile, this.filePath);
     }).catch((e) => {
       console.warn('[vector-store] 持久化向量文件保存失败:', e.message);
     });

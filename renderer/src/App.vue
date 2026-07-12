@@ -73,6 +73,9 @@
     <!-- ===== Settings Overlay ===== -->
     <SettingsOverlay />
 
+    <!-- ===== Onboarding Tour ===== -->
+    <OnboardingTour ref="onboardingRef" />
+
     <!-- ===== Global: Toasts ===== -->
     <div class="toast-container">
       <div v-for="t in uiStore.toasts" :key="t.id" class="toast" :class="`toast--${t.type}`">{{ t.message }}</div>
@@ -85,7 +88,7 @@
         <p>{{ uiStore.confirmDialog.message }}</p>
         <div class="dialog__actions">
           <button class="btn" @click="uiStore.closeConfirm()">{{ uiStore.confirmDialog.cancelText || '取消' }}</button>
-          <button class="btn btn--primary" v-if="uiStore.confirmDialog.confirmText" @click="() => { uiStore.confirmDialog.onConfirm?.(); uiStore.closeConfirm() }">{{ uiStore.confirmDialog.confirmText }}</button>
+          <button class="btn btn--primary" v-if="uiStore.confirmDialog.confirmText" @click="handleConfirm">{{ uiStore.confirmDialog.confirmText }}</button>
         </div>
       </div>
     </div>
@@ -93,7 +96,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
 import { useUiStore, useDocsStore, useGraphStore, usePromptStore, useModelStore, useIdeaStore, useProjectStore } from './stores'
@@ -105,10 +108,16 @@ import GraphNodeTree from './components/GraphNodeTree.vue'
 import IdeaPanel from './components/IdeaPanel.vue'
 import SearchPanel from './components/SearchPanel.vue'
 import SettingsOverlay from './components/SettingsOverlay.vue'
+import OnboardingTour from './components/OnboardingTour.vue'
 
 const uiStore = useUiStore()
+const onboardingRef = ref(null)
 const docsStore = useDocsStore()
 const graphStore = useGraphStore()
+
+// 暴露 uiStore 给 OnboardingTour 组件用于切换视图
+window.__ksUiStore = uiStore
+window.__ksDocStore = docsStore
 const promptStore = usePromptStore()
 const modelStore = useModelStore()
 const ideaStore = useIdeaStore()
@@ -122,31 +131,226 @@ function onResize(event) {
 
 let searchCloseTimer = null
 function delayCloseSearch() {
+  clearTimeout(searchCloseTimer)
   searchCloseTimer = setTimeout(() => { uiStore.searchOpen = false }, 200)
 }
 async function doSearch() {
   if (!uiStore.searchQuery.trim()) return
   uiStore.searchOpen = true
+  uiStore.searching = true
   try {
     const results = await searchApi.search(uiStore.searchQuery)
     uiStore.searchResults = results.results || results || []
-  } catch (e) { uiStore.toast('搜索失败: ' + e.message, 'error') }
+  } catch (e) {
+    uiStore.toast('搜索失败: ' + e.message, 'error')
+  } finally {
+    uiStore.searching = false
+  }
+}
+
+// ===== 确认对话框：异步执行 onConfirm 并捕获错误 =====
+async function handleConfirm() {
+  const dialog = uiStore.confirmDialog
+  if (!dialog) return
+  uiStore.closeConfirm() // 先关闭对话框，避免用户重复点击
+  if (dialog.onConfirm) {
+    try { await dialog.onConfirm() }
+    catch (e) { uiStore.toast('操作失败: ' + (e.message || e), 'error') }
+  }
+}
+
+// ===== 文件类型辅助（与 FileExplorer 保持一致） =====
+function getFileType(name) {
+  const ext = name.split('.').pop()?.toLowerCase()
+  const typeMap = {
+    pdf: 'pdf', doc: 'doc', docx: 'docx',
+    md: 'md', markdown: 'md', txt: 'txt',
+    html: 'html', htm: 'html',
+    csv: 'csv', json: 'json',
+    ppt: 'ppt', pptx: 'pptx',
+    jpg: 'jpg', jpeg: 'jpg', png: 'png',
+  }
+  return typeMap[ext] || ext || 'txt'
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer)
+  const len = bytes.byteLength
+  const CHUNK = 0x8000
+  let binary = ''
+  for (let i = 0; i < len; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CHUNK, len)))
+  }
+  return btoa(binary)
+}
+
+// ===== 菜单 IPC 事件监听 =====
+const unsubscribers = []
+
+function setupMenuListeners() {
+  const ks = window.KSElectron
+  if (!ks) return // Web 模式下无 Electron 桥接
+
+  // 文件 → 打开文件（菜单通过 showOpenDialog 获取路径后发送）
+  if (ks.onOpenFile) {
+    unsubscribers.push(ks.onOpenFile(async (filePath) => {
+      if (!filePath) return
+      try {
+        const buffer = await ks.readFile(filePath)
+        const name = filePath.split(/[\\/]/).pop()
+        const content = arrayBufferToBase64(buffer)
+        const type = getFileType(name)
+        const results = await docsStore.importFiles([{ name, content, type }])
+        const successCount = results.length
+        if (successCount > 0) {
+          uiStore.toast(`已导入: ${name}`, 'success')
+        } else {
+          uiStore.toast(`导入失败: ${name}`, 'error')
+        }
+      } catch (e) { uiStore.toast('导入失败: ' + e.message, 'error') }
+    }))
+  }
+
+  // 偏好设置
+  if (ks.onOpenSettings) {
+    unsubscribers.push(ks.onOpenSettings(() => uiStore.openSettings('model')))
+  }
+
+  // AI → 模型设置
+  if (ks.onOpenAISettings) {
+    unsubscribers.push(ks.onOpenAISettings(() => uiStore.openSettings('model')))
+  }
+
+  // 视图切换（菜单中的"文献"/"知识图谱"/"灵感"）
+  if (ks.onSwitchView) {
+    unsubscribers.push(ks.onSwitchView((view) => {
+      if (view === 'graph' || view === 'idea' || view === 'documents') uiStore.setView(view)
+    }))
+  }
+
+  // 导出图谱
+  if (ks.onExportGraph) {
+    unsubscribers.push(ks.onExportGraph(() => {
+      uiStore.setView('graph')
+      if (!graphStore.nodes.length) {
+        uiStore.toast('图谱为空，无法导出', 'error')
+        return
+      }
+      const data = JSON.stringify({
+        nodes: graphStore.nodes,
+        edges: graphStore.edges,
+        exportedAt: new Date().toISOString()
+      }, null, 2)
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `knowledge-graph-${Date.now()}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      uiStore.toast(`已导出 ${graphStore.nodes.length} 个节点`, 'success')
+    }))
+  }
+
+  // 全部清除
+  if (ks.onClearAll) {
+    unsubscribers.push(ks.onClearAll(() => {
+      uiStore.showConfirm({
+        title: '清除所有数据',
+        message: '这将清除所有文档、图谱和灵感数据，且不可恢复。确定继续吗？',
+        confirmText: '清除',
+        onConfirm: async () => {
+          try {
+            await graphStore.clearGraph()
+            uiStore.toast('已清除所有图谱数据', 'success')
+          } catch (e) { uiStore.toast('清除失败: ' + e.message, 'error') }
+        }
+      })
+    }))
+  }
+
+  // 左侧面板切换
+  if (ks.onToggleLeftPanel) {
+    unsubscribers.push(ks.onToggleLeftPanel(() => {
+      leftPaneSize.value = leftPaneSize.value > 5 ? 0 : 28
+    }))
+  }
+
+  // 缩放图谱
+  if (ks.onZoomGraph) {
+    unsubscribers.push(ks.onZoomGraph((scale) => {
+      uiStore.setView('graph')
+      nextTick(() => uiStore.sendGraphCommand(scale > 1 ? 'zoomIn' : 'zoomOut'))
+    }))
+  }
+
+  // 适配视图
+  if (ks.onFitGraph) {
+    unsubscribers.push(ks.onFitGraph(() => {
+      uiStore.setView('graph')
+      nextTick(() => uiStore.sendGraphCommand('reset'))
+    }))
+  }
+
+  // 显示帮助
+  if (ks.onShowHelp) {
+    unsubscribers.push(ks.onShowHelp(() => {
+      uiStore.openSettings('about')
+    }))
+  }
+
+  // 后端错误
+  if (ks.onBackendError) {
+    unsubscribers.push(ks.onBackendError((data) => {
+      uiStore.toast('后端服务异常: ' + (data?.message || '未知错误'), 'error')
+    }))
+  }
 }
 
 onMounted(async () => {
   document.documentElement.setAttribute('data-theme', uiStore.theme)
   uiStore.setView('documents')
 
+  // 注册菜单事件
+  setupMenuListeners()
+
   // 并行加载数据
   const loads = [
-    docsStore.load().catch(() => {}),
-    projectStore.load().catch(() => {}),
-    promptStore.load().catch(() => {}),
-    modelStore.load().catch(() => {}),
-    ideaStore.load().catch(() => {}),
-    graphStore.loadGraph().catch(() => {}),
+    docsStore.load().catch((e) => { console.error('docs load:', e); return [] }),
+    projectStore.load().catch((e) => { console.error('projects load:', e); return [] }),
+    promptStore.load().catch((e) => { console.error('prompts load:', e); return [] }),
+    modelStore.load().catch((e) => { console.error('model config load:', e); return null }),
+    ideaStore.load().catch((e) => { console.error('ideas load:', e); return [] }),
+    graphStore.loadGraph().catch((e) => { console.error('graph load:', e); return null }),
   ]
-  await Promise.allSettled(loads)
+  const results = await Promise.allSettled(loads)
+  // 如果所有加载都失败，提示后端连接问题
+  const allFailed = results.every(r => r.status === 'rejected')
+  if (allFailed) {
+    uiStore.toast('无法连接后端服务，请检查服务是否已启动', 'error')
+  }
+})
+
+// 确认对话框 Escape 键关闭
+function onConfirmKeyDown(e) {
+  if (e.key === 'Escape' && uiStore.confirmDialog) {
+    uiStore.closeConfirm()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onConfirmKeyDown)
+})
+
+onBeforeUnmount(() => {
+  // 清理所有 IPC 监听器
+  unsubscribers.forEach(fn => { try { fn() } catch (e) {} })
+  // 清理搜索关闭定时器
+  if (searchCloseTimer) clearTimeout(searchCloseTimer)
+  // 清理确认对话框按键监听
+  window.removeEventListener('keydown', onConfirmKeyDown)
 })
 
 // 视图切换时微调左侧面板宽度

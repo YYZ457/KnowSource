@@ -1,7 +1,7 @@
 /** @module services/embedding-provider
  *  职责：embedding 提供者适配器（stub / Ollama / OpenAI 兼容） */
 
-import { VENDOR_PRESETS } from './llm-provider.js';
+import { VENDOR_PRESETS, withRetry } from './llm-provider.js';
 
 // 各 OpenAI 兼容供应商的默认 embedding 模型
 const EMBEDDING_PRESETS = {
@@ -16,6 +16,30 @@ const EMBEDDING_PRESETS = {
   // HuggingFace 默认使用轻量级 sentence-transformers 模型
   huggingface: 'sentence-transformers/all-MiniLM-L6-v2'
 };
+
+/** 校验 embedding 返回值是有效数值数组 */
+function validateEmbedding(vec, providerName) {
+  if (!Array.isArray(vec) || vec.length === 0) {
+    throw new Error(`${providerName} 返回了无效的 embedding：期望非空数值数组`);
+  }
+  // 检查首尾元素是否为数字（抽样检查，避免遍历整个向量）
+  if (typeof vec[0] !== 'number' || typeof vec[vec.length - 1] !== 'number') {
+    throw new Error(`${providerName} 返回的 embedding 包含非数值元素`);
+  }
+  // 维度一致性检测：首次调用时记录维度，后续调用校验
+  if (expectedDimension === null) {
+    expectedDimension = vec.length;
+  } else if (vec.length !== expectedDimension) {
+    throw new Error(
+      `${providerName} 返回维度 ${vec.length} 与预期 ${expectedDimension} 不一致，` +
+      `可能 provider 或 model 配置已变更，请重新构建图谱`
+    );
+  }
+  return vec;
+}
+
+// 预期维度（首次 embedding 后设置，provider 切换时重置）
+let expectedDimension = null;
 
 // 默认 stub：基于 hash 的伪 embedding（保证无网络时可用）
 class StubEmbeddingProvider {
@@ -46,21 +70,29 @@ class OllamaEmbeddingProvider {
   }
 
   async embed(text) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-    try {
-      const resp = await fetch(`${this.baseUrl}/api/embeddings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: this.model, prompt: text }),
-        signal: controller.signal
-      });
-      if (!resp.ok) throw new Error(`Ollama embed failed: ${resp.status}`);
-      const data = await resp.json();
-      return data.embedding;
-    } finally {
-      clearTimeout(timeout);
-    }
+    const doFetch = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      try {
+        const resp = await fetch(`${this.baseUrl}/api/embeddings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: this.model, prompt: text }),
+          signal: controller.signal
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          const err = new Error(`Ollama embed failed: ${resp.status} ${errText.slice(0, 200)}`);
+          err.status = resp.status;
+          throw err;
+        }
+        const data = await resp.json();
+        return validateEmbedding(data.embedding, 'Ollama');
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+    return withRetry(doFetch, { maxRetries: 2, baseDelay: 1000 });
   }
 }
 
@@ -79,27 +111,33 @@ class OpenAICompatibleEmbeddingProvider {
     if (!this.model) {
       throw new Error('未配置 embedding 模型，请手动指定');
     }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-    try {
-      const resp = await fetch(`${this.baseUrl}/embeddings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify({ model: this.model, input: text }),
-        signal: controller.signal
-      });
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        throw new Error(`OpenAI-compatible embed failed: ${resp.status} ${errText.slice(0, 200)}`);
+    const doFetch = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      try {
+        const resp = await fetch(`${this.baseUrl}/embeddings`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`
+          },
+          body: JSON.stringify({ model: this.model, input: text }),
+          signal: controller.signal
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          const err = new Error(`OpenAI-compatible embed failed: ${resp.status} ${errText.slice(0, 200)}`);
+          err.status = resp.status;
+          throw err;
+        }
+        const data = await resp.json();
+        const vec = data?.data?.[0]?.embedding;
+        return validateEmbedding(vec, 'OpenAI-compatible');
+      } finally {
+        clearTimeout(timeout);
       }
-      const data = await resp.json();
-      return data.data[0].embedding;
-    } finally {
-      clearTimeout(timeout);
-    }
+    };
+    return withRetry(doFetch, { maxRetries: 2, baseDelay: 1000 });
   }
 }
 
@@ -129,37 +167,66 @@ class HuggingFaceEmbeddingProvider {
   }
 
   async embed(text) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-    try {
-      const resp = await fetch(this._embedUrl(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
-        signal: controller.signal
-      });
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        const err = new Error(`HuggingFace embed failed: ${resp.status} ${errText.slice(0, 200)}`);
-        err.status = resp.status;
-        throw err;
+    const doFetch = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      try {
+        const resp = await fetch(this._embedUrl(), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`
+          },
+          body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
+          signal: controller.signal
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          const err = new Error(`HuggingFace embed failed: ${resp.status} ${errText.slice(0, 200)}`);
+          err.status = resp.status;
+          throw err;
+        }
+        const data = await resp.json();
+        // HF feature-extraction 返回嵌套数组 [[...]]，取第一个 token 向量
+        // 若返回 per-token 嵌套数组，取均值池化
+        if (Array.isArray(data) && Array.isArray(data[0]) && Array.isArray(data[0][0])) {
+          // per-token: [[v1, v2, ...], [v3, v4, ...], ...] → 均值池化
+          const tokens = data[0];
+          const dim = tokens[0].length;
+          const pooled = new Array(dim).fill(0);
+          for (const t of tokens) {
+            for (let i = 0; i < dim; i++) pooled[i] += t[i] / tokens.length;
+          }
+          return validateEmbedding(pooled, 'HuggingFace');
+        }
+        const vec = Array.isArray(data) ? (Array.isArray(data[0]) ? data[0] : data) : data;
+        return validateEmbedding(vec, 'HuggingFace');
+      } finally {
+        clearTimeout(timeout);
       }
-      const data = await resp.json();
-      // HF feature-extraction 返回嵌套数组 [[...]]，取第一层
-      return Array.isArray(data) ? (Array.isArray(data[0]) ? data[0] : data) : data;
-    } finally {
-      clearTimeout(timeout);
-    }
+    };
+    return withRetry(doFetch, { maxRetries: 2, baseDelay: 1000 });
   }
 }
 
 let currentProvider = new StubEmbeddingProvider();
 
-export function setEmbeddingProvider(provider) {
+export async function setEmbeddingProvider(provider) {
   currentProvider = provider;
+  // 重置预期维度，允许新 provider 使用不同维度
+  expectedDimension = null;
+  // 清除向量库缓存，避免旧维度向量与新 provider 不匹配
+  try {
+    const { getVectorStore } = await import('./vector-store.js');
+    const store = getVectorStore();
+    if (store && typeof store.clear === 'function') {
+      await store.clear();
+      console.log('[embedding] 向量库缓存已清除（provider 切换）');
+    }
+  } catch (e) {
+    // vector-store 可能未初始化，忽略
+    console.warn('[embedding] 清除向量库缓存失败:', e.message);
+  }
 }
 
 export function getEmbeddingProvider() {
@@ -206,4 +273,4 @@ export async function embed(text) {
   return currentProvider.embed(text);
 }
 
-export { StubEmbeddingProvider, OllamaEmbeddingProvider, HuggingFaceEmbeddingProvider, OpenAIEmbeddingProvider, OpenAICompatibleEmbeddingProvider };
+export { StubEmbeddingProvider, OllamaEmbeddingProvider, HuggingFaceEmbeddingProvider, OpenAIEmbeddingProvider, OpenAICompatibleEmbeddingProvider, EMBEDDING_PRESETS };

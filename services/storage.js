@@ -151,6 +151,22 @@ async function loadJSON(filePath) {
         console.error(`[storage] 备份失败:`, bakErr.message);
       }
     }
+    // 修复：尝试从轮转备份中恢复数据
+    const backups = ['.backup.1', '.backup.2', '.backup.3', '.bak'];
+    for (const suffix of backups) {
+      const backupPath = `${filePath}${suffix}`;
+      if (existsSync(backupPath)) {
+        try {
+          const backupRaw = await readFile(backupPath, 'utf-8');
+          const recovered = JSON.parse(backupRaw);
+          console.warn(`[storage] 已从备份恢复: ${backupPath}`);
+          return recovered;
+        } catch (backupErr) {
+          console.warn(`[storage] 备份也损坏 ${backupPath}:`, backupErr.message);
+        }
+      }
+    }
+    console.error(`[storage] 所有备份均不可用，返回 null`);
     return null;
   }
 }
@@ -198,9 +214,11 @@ async function saveJSON(filePath, data) {
     try {
       // 原子写入：先写临时文件，再重命名覆盖目标文件
       await writeFile(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-      // 在重命名前执行备份轮转
-      rotateBackupSync(filePath);
+      // 修复：先执行原子 rename，成功后再做备份轮转
+      // （原代码先 rotate 再 rename，崩溃窗口内目标文件不存在）
       await rename(tmpFile, filePath);
+      // rename 成功后，旧文件已被新内容覆盖；此时备份轮转
+      rotateBackupSync(filePath);
     } catch (e) {
       lastWriteError = { filePath, message: e.message, code: e.code, time: Date.now() };
       console.error(`[storage] 写入失败 ${filePath}:`, e.message);
@@ -613,9 +631,11 @@ export async function listProjects() {
   // 为每个项目附加文档数量统计
   const projectsWithStats = await Promise.all(projects.map(async (p) => {
     let documentCount = 0;
+    let ideaCount = 0;
     if (p.id === currentProjectId) {
       // 当前项目使用内存中的文档数量（可能尚未持久化到磁盘）
       documentCount = documentsMap.size;
+      ideaCount = ideasMap.size;
     } else {
       try {
         const docs = await loadJSON(getDocumentsFile(p.id));
@@ -623,8 +643,15 @@ export async function listProjects() {
       } catch {
         // 读取失败时默认为 0
       }
+      try {
+        const ideas = await loadJSON(getIdeasFile(p.id));
+        ideaCount = Array.isArray(ideas) ? ideas.length : 0;
+      } catch {
+        // 读取失败时默认为 0
+      }
     }
-    return { ...p, documentCount };
+
+    return { ...p, documentCount, ideaCount };
   }));
   // 按最近使用时间（updatedAt）降序排序：最近使用/切换过的项目排在前面
   // updatedAt 在切换项目时更新，也作为 lastUsedAt 的语义
@@ -846,6 +873,17 @@ async function switchProjectCore(projectId) {
   await flushIdeasSave();
   await flushGraphSave();
 
+  // 修复：清理向量库缓存，避免旧项目的向量串到新项目
+  try {
+    const { getVectorStore } = await import('./vector-store.js');
+    const vecStore = getVectorStore();
+    if (vecStore && typeof vecStore.clear === 'function') {
+      await vecStore.clear();
+    }
+  } catch (e) {
+    console.warn('[storage] 清理向量库缓存失败:', e.message);
+  }
+
   // 记录原项目 ID，用于加载失败时回滚
   const previousProjectId = currentProjectId;
 
@@ -868,6 +906,8 @@ async function switchProjectCore(projectId) {
     invalidateProjectsCache();
     // 回滚到原项目 ID
     currentProjectId = previousProjectId;
+    // 同步恢复 lastUsedProjectId，避免重启后仍指向加载失败的项目
+    lastUsedProjectId = previousProjectId;
     // 重新加载原项目数据（loadProjectData 可能已清空内存中的 Map）
     if (previousProjectId) {
       try {
@@ -906,28 +946,29 @@ async function switchProjectCore(projectId) {
  */
 export async function switchProject(projectId) {
   // 并发锁：防止多个 switchProject 请求并发执行
+  // 必须在任何 await 之前设置，避免 TOCTOU 竞态
   if (projectSwitching) {
     return { error: '项目正在切换中，请稍后再试' };
   }
-
-  const projects = await loadProjects();
-  const project = projects.find(p => p.id === projectId);
-  if (!project) {
-    return { error: '项目不存在' };
-  }
-
-  // 图谱构建期间禁止切换，避免数据丢失
-  if (storage.building) {
-    return { error: '图谱正在构建中，无法切换项目' };
-  }
-
-  // 文档解析期间（包括暂停状态）禁止切换，避免解析完成后写入新项目导致数据串写
-  if (storage.taskProgress.status === 'running' || storage.taskProgress.status === 'paused') {
-    return { error: '文档正在解析中，请等待解析完成或取消后再切换项目' };
-  }
-
   projectSwitching = true;
+
   try {
+    const projects = await loadProjects();
+    const project = projects.find(p => p.id === projectId);
+    if (!project) {
+      return { error: '项目不存在' };
+    }
+
+    // 图谱构建期间禁止切换，避免数据丢失
+    if (storage.building) {
+      return { error: '图谱正在构建中，无法切换项目' };
+    }
+
+    // 文档解析期间（包括暂停状态）禁止切换，避免解析完成后写入新项目导致数据串写
+    if (storage.taskProgress.status === 'running' || storage.taskProgress.status === 'paused') {
+      return { error: '文档正在解析中，请等待解析完成或取消后再切换项目' };
+    }
+
     return await switchProjectCore(projectId);
   } finally {
     projectSwitching = false;

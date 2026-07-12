@@ -62,7 +62,33 @@ const LLM_STOP_WORDS = new Set([
   'from', 'up', 'about', 'into', 'through', 'this', 'that', 'these', 'those',
   'i', 'me', 'my', 'we', 'us', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her',
   'it', 'its', 'they', 'them', 'their', 'what', 'which', 'who', 'when', 'where', 'why', 'how',
-  'can', 'may', 'must', 'shall', 'as', 'if', 'then', 'than', 'so', 'such', 'also', 'too', 'very', 'just', 'only'
+  'can', 'may', 'must', 'shall', 'as', 'if', 'then', 'than', 'so', 'such', 'also', 'too', 'very', 'just', 'only',
+  // 英文常见动词/形容词/副词（不构成领域概念）
+  'each', 'used', 'using', 'use', 'uses', 'more', 'most', 'over', 'other', 'another',
+  'while', 'during', 'before', 'after', 'previously', 'between', 'different', 'same',
+  'long', 'short', 'large', 'small', 'high', 'low', 'new', 'old', 'first', 'last',
+  'number', 'table', 'figure', 'fig', 'results', 'result', 'state', 'states',
+  'size', 'sizes', 'type', 'types', 'form', 'forms', 'case', 'cases',
+  'way', 'ways', 'part', 'parts', 'line', 'lines', 'point', 'points',
+  'side', 'sides', 'end', 'ends', 'top', 'bottom', 'left', 'right',
+  'general', 'common', 'simple', 'complex', 'single', 'double', 'multiple',
+  'following', 'above', 'below', 'however', 'therefore', 'thus', 'hence',
+  'both', 'all', 'some', 'any', 'each', 'every', 'few', 'many',
+  'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'given', 'shown', 'called', 'known', 'unknown', 'defined',
+  'based', 'base', 'overall', 'total', 'whole', 'full', 'empty',
+  'output', 'outputs', 'input', 'inputs',  // 过于通用，具体如 encoder output 保留
+  'english', 'german', 'french',  // 语言名非概念
+  'google', 'facebook', 'microsoft',  // 公司名非概念
+  // 学术论文常见非概念词（动词/副词/形容词/通用名词）
+  'usually', 'since', 'there', 'often', 'mainly', 'various', 'important',
+  'specific', 'recent', 'major', 'larger', 'time', 'work', 'approach',
+  'process', 'effect', 'study', 'solve', 'solving', 'good', 'paper',
+  'proposed', 'proposes', 'propose', 'second', 'order', 'focus',
+  'improve', 'connected', 'fully', 'category', 'good', 'wise',
+  'randomly', 'there', 'since', 'capable', 'compute', 'style',
+  'series', 'technical', 'representative', 'openai', 'palm',  // 公司/产品名
+  'fine', 'natural', 'word', 'data',  // 过于通用，需组合才有意义（如 fine-tuning, natural language）
 ]);
 
 // 数学/公式符号：过滤公式残留
@@ -1080,7 +1106,9 @@ function mergeTerms(occurrences, maxTerms, fullText = '', modelTier = 'medium', 
 
   // 过滤全文出现次数过少的术语（仅当有全文时）
   // strong 模型放宽到 >=1（LLM 正确推断的术语可能只出现一次）；其他模型 >=2
-  const minFullTextCount = modelTier === 'strong' ? 1 : 2;
+  // 但对于短文本（< 2000 字符），LLM 抽取的术语可能只出现 1 次仍是有价值的
+  const minFullTextCount = modelTier === 'strong' ? 1
+    : (fullText && fullText.length < 2000 ? 1 : 2);
   const filtered = fullText
     ? scored.filter(s => s.fullTextCount >= minFullTextCount)
     : scored;
@@ -1211,7 +1239,20 @@ function parseTermsFromResponse(response, modelTier = 'medium') {
       const objMatch = response.match(/\{[\s\S]*\}/);
       if (objMatch) {
         const obj = tryParseJSON(objMatch[0]);
-        if (obj) candidates = obj;
+        if (obj) {
+          // 如果对象包含 terms 数组，直接提取
+          if (Array.isArray(obj.terms)) {
+            candidates = obj.terms;
+          } else if (Array.isArray(obj)) {
+            candidates = obj;
+          } else if (Array.isArray(obj.keywords)) {
+            candidates = obj.keywords;
+          } else {
+            // 对象的其他属性值可能包含术语
+            const vals = Object.values(obj).filter(v => typeof v === 'string' || Array.isArray(v));
+            candidates = vals.flatMap(v => Array.isArray(v) ? v : [v]);
+          }
+        }
       }
       // 尝试匹配 JSON 数组（旧格式 ["术语1", ...]）
       if (candidates.length === 0) {
@@ -1222,6 +1263,13 @@ function parseTermsFromResponse(response, modelTier = 'medium') {
         }
       }
     }
+  }
+
+  // 确保 candidates 始终是数组（防止 JSON 对象直接赋值导致 .map 失败）
+  if (!Array.isArray(candidates)) {
+    candidates = Array.isArray(candidates?.terms) ? candidates.terms
+      : Array.isArray(candidates?.keywords) ? candidates.keywords
+      : [];
   }
 
   // 3. 退回到按行/逗号/顿号提取

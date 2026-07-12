@@ -30,6 +30,17 @@ process.env.KNOWLEDGE_IDE_API_TOKEN = LOCAL_API_TOKEN;
 // CSP connect-src 运行时白名单：除本地服务外，只允许用户配置的 LLM baseUrl
 const allowedConnectOrigins = new Set();
 
+// 监听后端 settings handler 发出的 LLM 配置变更事件，实时更新 CSP 白名单
+process.on('llm-config-changed', ({ baseUrl }) => {
+  if (!baseUrl) return;
+  try {
+    allowedConnectOrigins.add(new URL(baseUrl).origin);
+    console.log('[Electron] CSP connect-src 白名单已更新:', baseUrl);
+  } catch {
+    console.warn('[Electron] 无法解析 LLM baseUrl:', baseUrl);
+  }
+});
+
 let mainWindow = null;
 let backendServer = null;
 const recentOpenedFiles = new Set();
@@ -90,6 +101,7 @@ async function startBackendService() {
   return new Promise((resolve, reject) => {
     backendServer.listen(BACKEND_PORT, '127.0.0.1', () => {
       console.log(`[Electron] 后端服务已启动: http://127.0.0.1:${BACKEND_PORT}`);
+      backendStopped = false; // 重置标志，允许后续 stopBackendService 正常执行
       resolve();
     });
     backendServer.on('error', (e) => {
@@ -129,10 +141,15 @@ function isOurBackendRunning() {
   });
 }
 
+// 退出流程标记，防止 stopBackendService 重复调用
+let backendStopped = false
+
 function stopBackendService() {
+  if (backendStopped) return
+  backendStopped = true
   if (backendServer) {
-    backendServer.close();
-    backendServer = null;
+    try { backendServer.close() } catch {}
+    backendServer = null
   }
   // 优雅关闭：终止 OCR worker，避免残留子进程占用资源
   // 使用动态 import 避免在未使用 OCR 功能时加载 tesseract.js
@@ -151,6 +168,11 @@ function buildCsp() {
   const localhostOrigin = `http://localhost:${BACKEND_PORT}`;
   const connect = ["'self'", backendOrigin, localhostOrigin, ...allowedConnectOrigins];
   const frame = ["'self'", 'blob:', backendOrigin, localhostOrigin];
+  // 修复：开发模式下放宽 CSP 以兼容 Vite HMR
+  if (!app.isPackaged) {
+    connect.push('ws://localhost:*', 'http://localhost:*');
+    return "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src " + connect.join(' ') + "; font-src 'self' data:; frame-src " + frame.join(' ') + "; object-src 'none';";
+  }
   return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src " + connect.join(' ') + "; font-src 'self' data:; frame-src " + frame.join(' ') + "; object-src 'none';";
 }
 
@@ -277,18 +299,15 @@ const appMenu = Menu.buildFromTemplate([
       { label: '左侧面板', accelerator: 'CmdOrCtrl+Shift+L', click: () => {
         mainWindow?.webContents.send('toggle-left-panel');
       }},
-      { label: '右侧面板', accelerator: 'CmdOrCtrl+Shift+R', click: () => {
-        mainWindow?.webContents.send('toggle-right-panel');
-      }},
       { type: 'separator' },
-      { label: '知识图谱', accelerator: 'CmdOrCtrl+1', click: () => {
+      { label: '文献', accelerator: 'CmdOrCtrl+1', click: () => {
+        mainWindow?.webContents.send('switch-view', 'documents');
+      }},
+      { label: '知识图谱', accelerator: 'CmdOrCtrl+2', click: () => {
         mainWindow?.webContents.send('switch-view', 'graph');
       }},
-      { label: 'Idea 面板', accelerator: 'CmdOrCtrl+2', click: () => {
+      { label: '灵感', accelerator: 'CmdOrCtrl+3', click: () => {
         mainWindow?.webContents.send('switch-view', 'idea');
-      }},
-      { label: '模型配置', accelerator: 'CmdOrCtrl+3', click: () => {
-        mainWindow?.webContents.send('switch-view', 'model');
       }},
       { type: 'separator' },
       { label: '放大', accelerator: 'CmdOrCtrl+Plus', click: () => {
@@ -301,8 +320,11 @@ const appMenu = Menu.buildFromTemplate([
         mainWindow?.webContents.send('fit-graph');
       }},
       { type: 'separator' },
-      { label: '开发者工具', accelerator: 'F12', role: 'toggleDevTools' },
-      { label: '重新加载', accelerator: 'CmdOrCtrl+R', role: 'reload' }
+      // 修复：生产环境隐藏开发者工具和重新加载，避免信息泄漏
+      ...(app.isPackaged ? [] : [
+        { label: '开发者工具', accelerator: 'F12', role: 'toggleDevTools' },
+        { label: '重新加载', accelerator: 'CmdOrCtrl+R', role: 'reload' }
+      ])
     ]
   },
   {
@@ -405,8 +427,15 @@ async function setupIPC() {
     let pythonVer = 'unknown';
     try {
       pythonVer = await new Promise((resolve) => {
-        execFile('python', ['--version'], { timeout: 5000 }, (err, stdout) => {
-          if (err) { resolve('not found'); return; }
+        // 优先尝试 python3（Mac/Linux 常见），回退到 python（Windows 常见）
+        execFile('python3', ['--version'], { timeout: 5000 }, (err, stdout) => {
+          if (err) {
+            execFile('python', ['--version'], { timeout: 5000 }, (err2, stdout2) => {
+              if (err2) { resolve('not found'); return; }
+              resolve(stdout2.toString().trim());
+            });
+            return;
+          }
           resolve(stdout.toString().trim());
         });
       });
@@ -551,10 +580,16 @@ async function setupIPC() {
         });
       });
       // 解析输出为模型列表（跳过表头）
+      // ollama list 输出格式: NAME ID SIZE MODIFIED
       const lines = output.trim().split('\n').slice(1);
       return lines.map(line => {
+        const match = line.trim().match(/^(\S+)\s+(\S+)\s+([\d.]+\s+\w+)\s+(.+)$/);
+        if (match) {
+          return { name: match[1], id: match[2], size: match[3], modified: match[4] };
+        }
+        // fallback: 简单分割
         const parts = line.trim().split(/\s+/);
-        return { name: parts[0], size: parts[1], modified: parts[2] };
+        return { name: parts[0], id: parts[1] || '', size: parts.slice(2, -2).join(' ') || '', modified: parts.slice(-2).join(' ') || '' };
       }).filter(m => m.name);
     } catch (e) {
       return [];
@@ -567,6 +602,16 @@ async function setupIPC() {
     return new Promise((resolve, reject) => {
       const proc = spawn('ollama', ['pull', modelName], { encoding: 'utf-8' });
       let lastProgress = '';
+      let destroyed = false;
+
+      // 窗口关闭时终止 ollama pull 进程
+      const onSenderDestroyed = () => {
+        destroyed = true;
+        try { proc.kill('SIGTERM'); } catch (_) {}
+      };
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.once('destroyed', onSenderDestroyed);
+      }
 
       proc.stdout.on('data', (data) => {
         const text = data.toString();
@@ -575,16 +620,23 @@ async function setupIPC() {
         if (match) {
           lastProgress = match[1] + '%';
         }
-        if (event.sender.isDestroyed()) return;
+        if (destroyed || event.sender.isDestroyed()) {
+          try { proc.kill('SIGTERM'); } catch (_) {}
+          return;
+        }
         event.sender.send('ollama:pull:progress', { model: modelName, progress: lastProgress, raw: text.trim() });
       });
 
       proc.stderr.on('data', (data) => {
-        if (event.sender.isDestroyed()) return;
+        if (destroyed || event.sender.isDestroyed()) return;
         event.sender.send('ollama:pull:progress', { model: modelName, progress: lastProgress, raw: data.toString().trim() });
       });
 
       proc.on('exit', (code) => {
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.removeListener('destroyed', onSenderDestroyed);
+        }
+        if (destroyed) return; // 窗口已关闭，不处理结果
         if (code === 0) {
           resolve({ success: true, model: modelName });
         } else {
@@ -593,17 +645,30 @@ async function setupIPC() {
       });
 
       proc.on('error', (e) => {
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.removeListener('destroyed', onSenderDestroyed);
+        }
         reject(new Error(`Failed to start ollama: ${e.message}`));
       });
     });
   });
 
-  // Ollama 安装（Windows: 下载 OllamaSetup.exe，但不再自动执行未验证二进制）
+  // Ollama 安装（按平台下载对应安装包，但不再自动执行未验证二进制）
   ipcMain.handle('ollama:install', async (event) => {
     const https = require('https');
 
-    const downloadUrl = 'https://ollama.com/download/OllamaSetup.exe';
-    const downloadPath = path.join(app.getPath('temp'), 'OllamaSetup.exe');
+    // 按平台选择下载 URL
+    let downloadUrl, downloadPath;
+    if (process.platform === 'win32') {
+      downloadUrl = 'https://ollama.com/download/OllamaSetup.exe';
+      downloadPath = path.join(app.getPath('temp'), 'OllamaSetup.exe');
+    } else if (process.platform === 'darwin') {
+      downloadUrl = 'https://ollama.com/download/Ollama-darwin.zip';
+      downloadPath = path.join(app.getPath('temp'), 'Ollama-darwin.zip');
+    } else {
+      // Linux: 指引用户到官方安装页面
+      return { success: false, error: 'Linux 请访问 https://ollama.com/download 安装 Ollama', manualUrl: 'https://ollama.com/download' };
+    }
 
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(downloadPath);
@@ -724,10 +789,16 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  stopBackendService();
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
-  stopBackendService();
+// will-quit: 在应用退出前异步清理后端和 OCR worker，确保子进程被正确终止
+app.on('will-quit', async (event) => {
+  if (backendStopped) return // 已清理过
+  event.preventDefault()
+  stopBackendService()
+  // 给 OCR worker 一点时间完成清理
+  setTimeout(() => {
+    app.exit(0)
+  }, 500)
 });

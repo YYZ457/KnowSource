@@ -42,6 +42,10 @@ const STOP_WORDS = new Set([
   '需要', '要求', '应', '应当', '应该', '必须',
   '使用', '利用', '运用', '采用', '采取', '选用', '选择',
   '已知', '未知', '设', '假设', '令',
+  // 教材常见非概念词
+  '可能', '真正', '世界', '这个', '这些', '那些', '某个', '某些',
+  '比较', '一般', '通常', '往往', '总是', '从不', '已经', '正在',
+  '比如', '例如', '譬如', '举例', '即', '亦即', '也就是', '换言之',
   '可见', '可知', '得出', '例如', '比如', '譬如', '举例', '实例',
   '即', '亦即', '也就是', '换句话', '换言之',
   '分别', '各自', '每个', '每一', '各个', '各',
@@ -70,7 +74,32 @@ const STOP_WORDS = new Set([
   'from', 'up', 'about', 'into', 'through', 'during', 'this', 'that', 'these', 'those',
   'i', 'me', 'my', 'we', 'us', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her',
   'it', 'its', 'they', 'them', 'their', 'what', 'which', 'who', 'when', 'where', 'why', 'how',
-  'can', 'may', 'must', 'shall', 'as', 'if', 'then', 'than', 'so', 'such', 'also', 'too', 'very', 'just', 'only'
+  'can', 'may', 'must', 'shall', 'as', 'if', 'then', 'than', 'so', 'such', 'also', 'too', 'very', 'just', 'only',
+  // 英文学术论文非概念词
+  'each', 'used', 'using', 'use', 'uses', 'more', 'most', 'over', 'other', 'another',
+  'while', 'before', 'after', 'previously', 'between', 'different', 'same',
+  'long', 'short', 'large', 'small', 'high', 'low', 'new', 'old', 'first', 'last',
+  'number', 'table', 'figure', 'fig', 'results', 'result', 'state', 'states',
+  'size', 'sizes', 'type', 'types', 'form', 'forms', 'case', 'cases',
+  'way', 'ways', 'part', 'parts', 'line', 'lines', 'point', 'points',
+  'side', 'sides', 'end', 'ends', 'top', 'bottom', 'left', 'right',
+  'general', 'common', 'simple', 'complex', 'single', 'double', 'multiple',
+  'following', 'above', 'below', 'however', 'therefore', 'thus', 'hence',
+  'both', 'all', 'some', 'any', 'every', 'few', 'many',
+  'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'given', 'shown', 'called', 'known', 'unknown', 'defined',
+  'based', 'base', 'overall', 'total', 'whole', 'full', 'empty',
+  'output', 'outputs', 'input', 'inputs',
+  'english', 'german', 'french',
+  'google', 'facebook', 'microsoft',
+  'usually', 'since', 'there', 'often', 'mainly', 'various', 'important',
+  'specific', 'recent', 'major', 'larger', 'time', 'work', 'approach',
+  'process', 'effect', 'study', 'solve', 'solving', 'good', 'paper',
+  'proposed', 'proposes', 'propose', 'second', 'order', 'focus',
+  'improve', 'connected', 'fully', 'category', 'wise',
+  'randomly', 'capable', 'compute', 'style',
+  'series', 'technical', 'representative', 'openai', 'palm',
+  'fine', 'natural', 'word', 'data'
 ]);
 
 // ============ 1b. 通用过滤常量 ============

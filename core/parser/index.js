@@ -374,29 +374,34 @@ async function parsePDF(file, onProgress, options = {}) {
   for (let i = 1; i <= totalPages; i++) {
     checkSignal();
     if (pauseCheck) await pauseCheck();
-    const page = await withTimeout(pdf.getPage(i), 30000, `PDF getPage(${i})`);
-    const viewport = page.getViewport({ scale: 1 });
-    const pageWidth = viewport.width;
-    const pageHeight = viewport.height;
-    const textContent = await withTimeout(page.getTextContent(), 30000, `PDF getTextContent(${i})`);
+    try {
+      const page = await withTimeout(pdf.getPage(i), 30000, `PDF getPage(${i})`);
+      const viewport = page.getViewport({ scale: 1 });
+      const pageWidth = viewport.width;
+      const pageHeight = viewport.height;
+      const textContent = await withTimeout(page.getTextContent(), 30000, `PDF getTextContent(${i})`);
 
-    // ★ 智能文字提取：支持多栏排版、页眉页脚过滤、字号自适应
-    const textBlocks = extractTextBlocksFromPage(textContent, pageWidth, pageHeight);
+      // ★ 智能文字提取：支持多栏排版、页眉页脚过滤、字号自适应
+      const textBlocks = extractTextBlocksFromPage(textContent, pageWidth, pageHeight);
 
-    // ★ 提取带位置信息的内嵌图片（用于后续按阅读顺序 OCR 插入）
-    // 达到预览图片上限后跳过后续图片提取，避免内存爆炸
-    let pageImages = [];
-    if (images.length < maxPreviewImages) {
-      pageImages = await extractImagesFromPageWithPositions(page, pdfjsLib);
-      // 只保留未超过上限的部分
-      const remaining = maxPreviewImages - images.length;
-      if (pageImages.length > remaining) {
-        pageImages = pageImages.slice(0, remaining);
+      // ★ 提取带位置信息的内嵌图片（用于后续按阅读顺序 OCR 插入）
+      // 达到预览图片上限后跳过后续图片提取，避免内存爆炸
+      let pageImages = [];
+      if (images.length < maxPreviewImages) {
+        pageImages = await extractImagesFromPageWithPositions(page, pdfjsLib);
+        const remaining = maxPreviewImages - images.length;
+        if (pageImages.length > remaining) {
+          pageImages = pageImages.slice(0, remaining);
+        }
       }
-    }
-    images.push(...pageImages);
+      images.push(...pageImages);
 
-    pageData.push({ page: i, pageHeight, textBlocks, pageImages });
+      pageData.push({ page: i, pageHeight, textBlocks, pageImages });
+    } catch (pageErr) {
+      // 单页提取失败不中断整体流程，跳过该页继续
+      console.warn(`[parsePDF] 第 ${i} 页文本提取失败: ${pageErr.message}`);
+      pageData.push({ page: i, pageHeight: 0, textBlocks: [], pageImages: [] });
+    }
 
     reportProgress({
       currentPage: i,
@@ -474,7 +479,12 @@ async function parsePDF(file, onProgress, options = {}) {
       }
       const pageSection = `\n--- 第${i}页(OCR) ---\n${ocrText}\n`;
       textParts.push(pageSection);
+      // 限制预览累积器大小，避免大 PDF 导致内存增长和传输开销
+      // 仅保留最近 2 页的 OCR 文本（滑动窗口）
       previewAccumulator += pageSection;
+      if (previewAccumulator.length > 4000) {
+        previewAccumulator = previewAccumulator.slice(-4000);
+      }
 
       reportProgress({
         currentPage: i,
@@ -640,15 +650,22 @@ function collapseGhostDuplicates(str) {
   let result = str;
   let changed = true;
   let iter = 0;
+  // 单字重影折叠：仅折叠连续重复 ≥3 次的单字（如 "慢慢慢慢" → "慢"）
+  // 阈值 3 可保护合法叠词（"慢慢""匆匆"等双字叠词不折叠）
+  // PDF 重影通常导致 3+ 次重复，而正常文本极少出现三字叠
   while (changed && iter < MAX_ITERATIONS) {
     changed = false;
     let r = '';
     let i = 0;
     while (i < result.length) {
       const c = result[i];
-      if (i < result.length - 1 && c === result[i + 1] && /[\u4e00-\u9fa5]/.test(c)) {
+      // 检测 3+ 次连续重复的中文字符
+      if (i < result.length - 2 && c === result[i + 1] && c === result[i + 2] && /[\u4e00-\u9fa5]/.test(c)) {
         r += c;
-        i += 2;
+        // 跳过所有连续重复
+        let j = i + 1;
+        while (j < result.length && result[j] === c) j++;
+        i = j;
         changed = true;
       } else {
         r += c;
@@ -669,11 +686,12 @@ function collapseGhostDuplicates(str) {
   } while (result !== prev && iter < MAX_ITERATIONS);
 
   // CJK 整词/短语重影（如 "概率模型概率模型"）
-  // 仅当某个长度≥2 的 CJK 片段连续重复≥2 次时折叠
+  // 仅当某个长度≥4 的 CJK 片段连续重复≥2 次时折叠
+  // 阈值 4 可保护短合法重复短语（如 "我们我们""正文正文"）
   iter = 0;
   do {
     prev = result;
-    result = result.replace(/([\u4e00-\u9fa5]{2,})\1+/g, '$1');
+    result = result.replace(/([\u4e00-\u9fa5]{4,})\1+/g, '$1');
     iter++;
   } while (result !== prev && iter < MAX_ITERATIONS);
 
@@ -1056,26 +1074,30 @@ async function getOcrWorker() {
 const OCR_PAGE_TIMEOUT = 60000;
 
 async function ocrImage(file, onProgress) {
-  // 在调用 recognize 之前设置当前进度回调，
-  // 使 Tesseract worker logger 能正确回调到本次调用的 onProgress。
   _currentOcrProgress = onProgress || null;
   const worker = await getOcrWorker();
   let recognizeTimeoutId;
   try {
-    // Wrap the recognize call with timeout，超时后必须清理定时器
+    // Wrap the recognize call with timeout
+    // 关键：recognize 的 Promise 即使被 race 丢弃也仍会在后台运行
+    // 必须挂 .catch() 防止 unhandled promise rejection
+    const recognizePromise = worker.recognize(file);
+    // 吞掉后台仍在运行的 recognize 的 rejection（超时后 worker 会被 terminate）
+    recognizePromise.catch(() => {});
+
     const result = await Promise.race([
-      worker.recognize(file),
+      recognizePromise,
       new Promise((_, reject) => {
         recognizeTimeoutId = setTimeout(() => reject(new Error('OCR timeout')), OCR_PAGE_TIMEOUT);
       })
     ]).finally(() => clearTimeout(recognizeTimeoutId));
-    // 不立即terminate，复用worker
     return result?.data?.text || '';
   } catch (err) {
-    // 超时或异常后必须terminate worker并置_ocrWorker=null，避免竞态条件
+    // 超时或异常后必须 terminate worker 并置 _ocrWorker=null，避免竞态
     clearTimeout(recognizeTimeoutId);
     try { await worker.terminate(); } catch (_) {}
     _ocrWorker = null;
+    _ocrWorkerPromise = null;
     console.warn('[OCR] Recognition failed:', err.message);
     return '';
   } finally {

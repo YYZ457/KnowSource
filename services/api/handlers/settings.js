@@ -46,7 +46,7 @@ function validateConfig(cfg) {
  * @param {function} setter - setLLMProvider 或 setKGProvider
  * @returns {{warnings: string[]}} 校验警告列表
  */
-function applyConfig(config, setter) {
+async function applyConfig(config, setter) {
   // 创建副本，避免直接修改传入的 config 对象（调用方可能复用该对象）
   const cfg = { ...config };
   // 兼容旧配置：将 legacy 'openai' 迁移到 'openai-compatible'
@@ -59,24 +59,42 @@ function applyConfig(config, setter) {
   }
   const { provider, vendor, model, apiKey, baseUrl } = cfg || {};
 
+  // 修复：校验 provider 是否有效
+  const VALID_PROVIDERS = ['stub', 'ollama', 'openai-compatible', 'huggingface'];
+  if (provider && !VALID_PROVIDERS.includes(provider)) {
+    return { warnings: [`未知的 provider: ${provider}，支持的有: ${VALID_PROVIDERS.join(', ')}`], error: true };
+  }
+
+  // 修复：非 stub provider 必须有 model
+  if (provider && provider !== 'stub' && !model) {
+    return { warnings: ['模型名称不能为空'], error: true };
+  }
+
   // 校验配置，收集警告（不阻止保存，允许用户保存部分配置）
   const warnings = validateConfig(cfg);
 
   if (!provider || provider === 'stub') {
     setter(createLLMProvider('stub'));
-    setEmbeddingProvider(createEmbeddingProvider('stub'));
+    await setEmbeddingProvider(createEmbeddingProvider('stub'));
     return { warnings };
   }
   setter(createLLMProvider(provider, { vendor, model, apiKey, baseUrl }));
   // 同步设置 embedding provider：与 LLM 使用同一接入点，但按供应商选择默认 embedding 模型
   // （不传递 LLM 的 model，避免把对话模型名覆盖 embedding 模型名）
-  setEmbeddingProvider(createEmbeddingProvider(provider, { vendor, apiKey, baseUrl }));
+  await setEmbeddingProvider(createEmbeddingProvider(provider, { vendor, apiKey, baseUrl }));
+
+  // 通知 Electron 主进程更新 CSP connect-src 白名单（用于渲染进程直接 fetch LLM API）
+  if (baseUrl) {
+    try { process.emit('llm-config-changed', { baseUrl }); } catch {}
+  }
+
   return { warnings };
 }
 
-export function setLLMProviderHandler(config = {}) {
-  const { warnings } = applyConfig(config, setLLMProvider);
-  return { success: true, provider: config.provider, warnings };
+export async function setLLMProviderHandler(config = {}) {
+  const result = await applyConfig(config, setLLMProvider);
+  if (result.error) return { success: false, warnings: result.warnings };
+  return { success: true, provider: config.provider, warnings: result.warnings };
 }
 
 /**
@@ -90,9 +108,10 @@ export function getLLMProviderHandler() {
   return safeConfig;
 }
 
-export function setKGProviderHandler(config = {}) {
-  const { warnings } = applyConfig(config, setKGProvider);
-  return { success: true, provider: config.provider, warnings };
+export async function setKGProviderHandler(config = {}) {
+  const result = await applyConfig(config, setKGProvider);
+  if (result.error) return { success: false, warnings: result.warnings };
+  return { success: true, provider: config.provider, warnings: result.warnings };
 }
 
 /**

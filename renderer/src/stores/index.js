@@ -7,10 +7,11 @@ export const useUiStore = defineStore('ui', () => {
   const activeView = ref('documents') // documents | graph | idea
   const leftPanelVisible = ref(true)
   const rightPanelVisible = ref(false)
-  const theme = ref(localStorage.getItem('ks-theme') || 'dark')
+  const theme = ref(localStorage.getItem('ks-theme') || 'light')
   const searchQuery = ref('')
   const searchResults = ref([])
   const searchOpen = ref(false)
+  const searching = ref(false)
   const toasts = ref([])
   const confirmDialog = ref(null)
 
@@ -40,8 +41,9 @@ export const useUiStore = defineStore('ui', () => {
     document.documentElement.setAttribute('data-theme', theme.value)
   }
 
+  let toastSeq = 0
   function toast(message, type = 'info') {
-    const id = Date.now() + Math.random()
+    const id = ++toastSeq
     toasts.value.push({ id, message, type })
     setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id) }, 3000)
   }
@@ -49,7 +51,11 @@ export const useUiStore = defineStore('ui', () => {
   function showConfirm(options) { confirmDialog.value = options }
   function closeConfirm() { confirmDialog.value = null }
 
-  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, setView, openSettings, closeSettings, toggleTheme, toast, showConfirm, closeConfirm }
+  // 图谱远程命令（菜单触发缩放/适配等，由 GraphView 监听执行）
+  const graphCommand = ref(null) // { action: 'zoomIn' | 'zoomOut' | 'reset', ts: number }
+  function sendGraphCommand(action) { graphCommand.value = { action, ts: Date.now() } }
+
+  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, setView, openSettings, closeSettings, toggleTheme, toast, showConfirm, closeConfirm, graphCommand, sendGraphCommand }
 })
 
 // ===== Documents Store =====
@@ -112,7 +118,12 @@ export const useDocsStore = defineStore('docs', () => {
     for (const f of files) {
       try {
         const result = await parseApi.parse(f)
-        results.push(result)
+        // 只计入成功结果（后端可能返回 {error} 而非抛异常）
+        if (result && !result.error) {
+          results.push(result)
+        } else {
+          console.error(`Parse returned error for ${f.name}:`, result?.error)
+        }
       } catch (e) { console.error(`Parse failed for ${f.name}:`, e) }
     }
     await load()
@@ -124,7 +135,12 @@ export const useDocsStore = defineStore('docs', () => {
       await documentsApi.remove(id)
       documents.value = documents.value.filter(d => d.id !== id)
       if (selectedDocId.value === id) { selectedDocId.value = null; selectedDocContent.value = '' }
-    } catch (e) { console.error('Remove failed:', e) }
+    } catch (e) {
+      console.error('Remove failed:', e)
+      // 删除失败时重新加载文档列表，确保前端状态与后端同步
+      await load()
+      throw e // 重新抛出错误，让调用者知道失败了
+    }
   }
 
   async function checkProgress() {
@@ -145,41 +161,69 @@ export const useGraphStore = defineStore('graph', () => {
   const selectedNode = ref(null)
   const building = ref(false)
   const buildProgress = ref('')
+  const buildPercent = ref(0)
+  const buildStage = ref('')
+  const buildLog = ref('')
   const nodeTree = ref([])
 
   async function build(docIds, options = {}) {
     building.value = true
     buildProgress.value = '正在构建知识图谱...'
+    buildPercent.value = 0
+    buildStage.value = ''
+    buildLog.value = ''
+
+    // 修复：轮询后端 /progress 端点获取实时进度
+    let pollTimer = null
     try {
+      pollTimer = setInterval(async () => {
+        try {
+          const p = await graphApi.getProgress()
+          if (p && p.taskId) {
+            if (p.status === 'running') {
+              buildProgress.value = p.log || p.stage || '构建中...'
+              buildPercent.value = p.percent || 0
+              buildStage.value = p.stage || ''
+              buildLog.value = p.log || ''
+            } else if (p.status === 'error') {
+              buildProgress.value = p.log || '构建出错'
+              buildPercent.value = p.percent || 0
+            }
+          }
+        } catch (e) { /* 静默忽略轮询错误 */ }
+      }, 1000)
+
       const result = await graphApi.build(docIds, options)
-      // 构建完成后自动加载图谱
       await loadGraph()
       buildProgress.value = ''
+      buildPercent.value = 100
       return result
     } catch (e) {
       buildProgress.value = '构建失败: ' + e.message
+      buildPercent.value = 0
+      setTimeout(() => { if (buildProgress.value.startsWith('构建失败')) buildProgress.value = '' }, 5000)
       throw e
-    } finally { building.value = false }
+    } finally {
+      if (pollTimer) clearInterval(pollTimer)
+      building.value = false
+    }
   }
 
   async function loadGraph() {
     try {
       const result = await graphApi.getStats()
       if (result.success !== false) {
-        // 规范化节点：后端返回 content/meta，映射为 label/specificity
         nodes.value = (result.nodes || []).map(n => ({
           ...n,
           label: n.label || n.name || n.content || n.id,
           specificity: n.specificity ?? n.weight ?? n.meta?.textrank ?? 0.5,
           type: n.type || 'other',
         }))
-        // 规范化边：后端返回 from/to（节点ID）和 source/target（元数据），优先用 from/to
         edges.value = (result.edges || []).map(e => ({
           ...e,
           source: e.from || e.source,
           target: e.to || e.target,
         }))
-        // 按 type 分组生成 nodeTree
         const groups = {}
         for (const n of nodes.value) {
           const t = n.type || 'other'
@@ -187,21 +231,39 @@ export const useGraphStore = defineStore('graph', () => {
           groups[t].push(n)
         }
         nodeTree.value = Object.entries(groups).map(([type, items]) => ({ type, items }))
+        // 图谱重建后清除旧的选中节点引用，避免持有过期对象
+        if (selectedNode.value && !nodes.value.find(n => n.id === selectedNode.value.id)) {
+          selectedNode.value = null
+        }
+      } else {
+        nodes.value = []
+        edges.value = []
+        nodeTree.value = []
+        selectedNode.value = null
       }
-    } catch (e) { console.error('Load graph failed:', e) }
+    } catch (e) {
+      console.error('Load graph failed:', e)
+      nodes.value = []
+      edges.value = []
+      nodeTree.value = []
+      selectedNode.value = null
+    }
   }
 
   async function clearGraph() {
     try {
       await graphApi.clearAll()
-    } catch (e) { console.error('Clear graph API failed:', e) }
+    } catch (e) {
+      console.error('Clear graph API failed:', e)
+      throw e
+    }
     nodes.value = []
     edges.value = []
     selectedNode.value = null
     nodeTree.value = []
   }
 
-  return { nodes, edges, selectedNode, building, buildProgress, nodeTree, build, loadGraph, clearGraph }
+  return { nodes, edges, selectedNode, building, buildProgress, buildPercent, buildStage, buildLog, nodeTree, build, loadGraph, clearGraph }
 })
 
 // ===== Prompt Store =====
@@ -227,14 +289,14 @@ export const usePromptStore = defineStore('prompt', () => {
     try {
       await settingsApi.savePrompt(taskId, template)
       overrides.value[taskId] = template
-    } catch (e) { console.error('Save override failed:', e) }
+    } catch (e) { console.error('Save override failed:', e); throw e }
   }
 
   async function resetOverride(taskId) {
     try {
       await settingsApi.resetPrompt(taskId)
       delete overrides.value[taskId]
-    } catch (e) { console.error('Reset override failed:', e) }
+    } catch (e) { console.error('Reset override failed:', e); throw e }
   }
 
   async function loadLogs() {
@@ -270,7 +332,7 @@ export const useModelStore = defineStore('model', () => {
   async function save() {
     try {
       await settingsApi.saveModelConfig(config.value)
-    } catch (e) { console.error('Save model config failed:', e) }
+    } catch (e) { console.error('Save model config failed:', e); throw e }
   }
 
   async function test() {
@@ -306,11 +368,13 @@ export const useIdeaStore = defineStore('idea', () => {
     try {
       const result = await ideaApi.create(idea)
       const created = result.data || result
-      if (created && !created.error) {
+      if (created && !created.error && created.id) {
         ideas.value.push(created)
+        return created
       }
-      return created
-    } catch (e) { console.error('Create idea failed:', e) }
+      // 后端返回错误（如"项目正在切换中"），返回 null 让调用方处理
+      return null
+    } catch (e) { console.error('Create idea failed:', e); throw e }
   }
 
   async function update(id, patch) {
@@ -318,8 +382,11 @@ export const useIdeaStore = defineStore('idea', () => {
       const result = await ideaApi.update(id, patch)
       const updated = result.data || result
       const idx = ideas.value.findIndex(i => i.id === id)
-      if (idx >= 0) ideas.value[idx] = { ...ideas.value[idx], ...patch }
-    } catch (e) { console.error('Update idea failed:', e) }
+      if (idx >= 0) {
+        // 使用服务器返回的完整对象更新（包含 updatedAt 等服务端字段）
+        ideas.value[idx] = { ...ideas.value[idx], ...updated }
+      }
+    } catch (e) { console.error('Update idea failed:', e); throw e }
   }
 
   async function remove(id) {
@@ -327,13 +394,13 @@ export const useIdeaStore = defineStore('idea', () => {
       await ideaApi.delete(id)
       ideas.value = ideas.value.filter(i => i.id !== id)
       if (selectedIdea.value?.id === id) selectedIdea.value = null
-    } catch (e) { console.error('Delete idea failed:', e) }
+    } catch (e) { console.error('Delete idea failed:', e); throw e }
   }
 
   async function linkToNode(ideaId, nodeId) {
     try {
       await ideaApi.linkToNode(ideaId, nodeId)
-    } catch (e) { console.error('Link idea failed:', e) }
+    } catch (e) { console.error('Link idea failed:', e); throw e }
   }
 
   return { ideas, selectedIdea, loading, load, create, update, remove, linkToNode }
@@ -354,9 +421,15 @@ export const useProjectStore = defineStore('project', () => {
 
   async function switchTo(projectId) {
     try {
-      await projectsApi.switch(projectId)
+      const result = await projectsApi.switch(projectId)
+      if (result && result.error) {
+        throw new Error(result.error)
+      }
       await load()
-    } catch (e) { console.error('Switch project failed:', e) }
+    } catch (e) {
+      console.error('Switch project failed:', e)
+      throw e // 重新抛出，让调用方处理
+    }
   }
 
   return { projects, currentProject, load, switchTo }

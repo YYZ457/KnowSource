@@ -245,8 +245,16 @@ async function runPipeline(files, options = {}) {
       for (const result of results) {
         if (result.error) {
           // 失败的文档回退到分步管线
+          // 确保 result.doc 存在（runWithConcurrency 异常时可能只有 error 字段）
+          if (!result.doc) {
+            console.error('[pipeline] fullExtract 返回无 doc 的错误:', result.error);
+            continue; // 无法回退，跳过（不应发生）
+          }
           const route = docRoutes.find(r => r.doc === result.doc);
-          if (route) route.useFullExtract = false;
+          if (route) {
+            route.useFullExtract = false;
+            console.warn(`[pipeline] 文档 ${result.doc?.meta?.name || '未知'} 回退到分步管线`);
+          }
           continue;
         }
         const { doc, nodes, edges, headings } = result;
@@ -308,6 +316,22 @@ async function runPipeline(files, options = {}) {
           console.warn(`[runPipeline] 文档 ${doc.meta.docId} 标题提取失败，回退规则:`, e.message);
           docHeadings = extractHeadings(docText, { fontSizeStats: doc.fontSizeStats });
         }
+
+        // 如果 PDF 有 bookmarks 且规则提取的标题太少（<3），使用 bookmarks 作为标题来源
+        // bookmarks 是 PDF 内嵌的目录结构，对学术论文非常准确
+        console.log(`[runPipeline] doc=${doc.meta.docId} bookmarks=${doc.bookmarks?.length || 0} docHeadings=${docHeadings.length}`);
+        if (doc.bookmarks && doc.bookmarks.length > 0 && docHeadings.length < 3) {
+          console.log(`[runPipeline] 文档 ${doc.meta.docId} 规则提取 ${docHeadings.length} 个标题，使用 PDF bookmarks (${doc.bookmarks.length} 个)`);
+          docHeadings = doc.bookmarks.map((bm, idx) => ({
+            id: `h_${idx}`,
+            title: bm.title || '',
+            level: bm.level || 1,
+            page: bm.page || (idx + 1),
+            start: 0,
+            end: 0
+          }));
+        }
+
         const docIdPrefix = doc.meta.docId;
         const flat = flattenHeadings(docHeadings);
         // 统一heading节点id格式：${docId}_${index}，与full-extract路径一致
@@ -328,6 +352,7 @@ async function runPipeline(files, options = {}) {
         const perDocGraphs = [];
         for (let di = 0; di < stepwiseDocs.length; di++) {
           const { doc } = stepwiseDocs[di];
+          try {
           onProgress?.({ stage: 'extractTerms', percent: 60 + Math.floor((di / stepwiseDocs.length) * 12), log: `抽取 ${doc.meta.name} 关键术语...` });
           const docSeedTerms = await extractKeyTerms(doc.rawText || '', {
             ...extractOpts,
@@ -423,6 +448,11 @@ async function runPipeline(files, options = {}) {
           }
 
           perDocGraphs.push({ doc, nodes: kg.nodes, edges: kg.edges });
+          } catch (docErr) {
+            // 单文档失败不中断整批，跳过该文档继续处理其他文档
+            console.error(`[pipeline] 文档 ${doc.meta?.name || di} 处理失败，跳过:`, docErr.message);
+            onProgress?.({ stage: 'extractTerms', percent: 60 + Math.floor(((di + 1) / stepwiseDocs.length) * 12), log: `${doc.meta?.name || '文档'} 处理失败，已跳过` });
+          }
         }
 
         onProgress?.({ stage: 'buildGraph', percent: 82, log: '合并各文档子图谱...' });
@@ -441,6 +471,8 @@ async function runPipeline(files, options = {}) {
               id: node.id,
               type: node.type || 'entity',
               content: node.label || node.keyword || String(node.id),
+              label: node.label || node.keyword || '',  // 保留 label 供前端显示
+              keyword: node.keyword || '',  // 保留 keyword 供前端显示
               weight: typeof node.weight === 'number' ? node.weight : 1,
               source: mergedSource,
               meta: {
@@ -532,13 +564,17 @@ async function runPipeline(files, options = {}) {
       } catch (kgErr) {
         console.error('[runPipeline] 无监督图谱构建失败，回退到旧版:', kgErr);
         onProgress?.({ stage: 'buildGraph', percent: 85, log: `图谱构建失败: ${kgErr.message}，使用简化图谱` });
-        const firstSections = (documents[0] && documents[0].sections) || [];
-        const legacyChapters = firstSections.length > 0
-          ? [{ id: 'ch1', title: '文档章节', sections: firstSections }]
-          : [];
-        const legacyGraph = generateKnowledgeGraph(legacyChapters, []);
-        graphNodes = legacyGraph.nodes.map(n => ({ ...n, type: n.type || 'concept', content: n.label || n.id }));
-        graphEdges = legacyGraph.edges.map(e => ({ ...e, type: e.type || 'belong', weight: e.weight || 1 }));
+        // 仅在 graphNodes 为空时才用 fallback 填充，避免覆盖 full-extract 已成功的结果
+        if (graphNodes.length === 0) {
+          // 合并所有文档的 sections，而非仅 documents[0]
+          const allSections = documents.flatMap(d => (d.sections || []));
+          const legacyChapters = allSections.length > 0
+            ? [{ id: 'ch1', title: '文档章节', sections: allSections }]
+            : [];
+          const legacyGraph = generateKnowledgeGraph(legacyChapters, []);
+          graphNodes = legacyGraph.nodes.map(n => ({ ...n, type: n.type || 'concept', content: n.label || n.id }));
+          graphEdges = legacyGraph.edges.map(e => ({ ...e, type: e.type || 'belong', weight: e.weight || 1 }));
+        }
       }
     } // end of if (stepwiseDocs.length > 0)
   }
@@ -579,28 +615,52 @@ async function runPipeline(files, options = {}) {
 
     if (useLLM) {
       // 有 LLM 时用语义判断版：分别连接 heading 和 entity
+      // 每类独立 try/catch，各自失败各自回退规则版
       const kg = new KnowledgeGraph();
       for (const n of graphNodes) kg.addNode(n);
       for (const e of graphEdges) kg.addEdge(e);
-      let existingKeys = snapshotCrossLinkKeys(kg);
+
+      // --- heading 跨文档连接 ---
+      let headingEdges = [];
       try {
+        let existingKeys = snapshotCrossLinkKeys(kg);
         await buildCrossLinksLLM(kg, { provider, threshold: 0.3, nodeTypes: ['heading'] });
-        inferredEdges.push(...collectNewCrossLinks(kg, existingKeys));
-
-        existingKeys = snapshotCrossLinkKeys(kg);
-        await buildCrossLinksLLM(kg, { provider, threshold: 0.3, nodeTypes: ['entity'] });
-        inferredEdges.push(...collectNewCrossLinks(kg, existingKeys));
-
-        if (inferredEdges.length > 0) {
-          onProgress?.({ stage: 'crossLink', percent: 90, log: `跨文档 LLM 连接完成：${inferredEdges.length} 条` });
-        }
+        headingEdges = collectNewCrossLinks(kg, existingKeys);
+        inferredEdges.push(...headingEdges);
       } catch (e) {
         if (e.code === 'TASK_DISABLED') {
-          console.warn('[pipeline] 跨文档 LLM 连线任务已被禁用，使用规则连线:', e.message);
+          console.warn('[pipeline] 跨文档 heading LLM 连线任务已被禁用，使用规则连线:', e.message);
         } else {
-          console.warn('[pipeline] 跨文档 LLM 连接失败，回退规则:', e.message);
+          console.warn('[pipeline] 跨文档 heading LLM 连接失败，回退规则:', e.message);
         }
-        crossLinkErrors.push({ stage: 'crossLink-llm', message: e.message });
+        crossLinkErrors.push({ stage: 'crossLink-llm-heading', message: e.message });
+        // 单独回退 heading 的规则连线
+        let existingKeys = snapshotCrossLinkKeys(kg);
+        buildCrossLinks(kg, { threshold: 0.3, nodeTypes: ['heading'] });
+        headingEdges = collectNewCrossLinks(kg, existingKeys);
+        inferredEdges.push(...headingEdges);
+      }
+
+      // --- entity 跨文档连接 ---
+      try {
+        let existingKeys = snapshotCrossLinkKeys(kg);
+        await buildCrossLinksLLM(kg, { provider, threshold: 0.3, nodeTypes: ['entity'] });
+        inferredEdges.push(...collectNewCrossLinks(kg, existingKeys));
+      } catch (e) {
+        if (e.code === 'TASK_DISABLED') {
+          console.warn('[pipeline] 跨文档 entity LLM 连线任务已被禁用，使用规则连线:', e.message);
+        } else {
+          console.warn('[pipeline] 跨文档 entity LLM 连接失败，回退规则:', e.message);
+        }
+        crossLinkErrors.push({ stage: 'crossLink-llm-entity', message: e.message });
+        // 单独回退 entity 的规则连线
+        let existingKeys = snapshotCrossLinkKeys(kg);
+        buildCrossLinks(kg, { threshold: 0.3, nodeTypes: ['entity'] });
+        inferredEdges.push(...collectNewCrossLinks(kg, existingKeys));
+      }
+
+      if (inferredEdges.length > 0) {
+        onProgress?.({ stage: 'crossLink', percent: 90, log: `跨文档 LLM 连接完成：${inferredEdges.length} 条` });
       }
     }
     if (inferredEdges.length === 0) {

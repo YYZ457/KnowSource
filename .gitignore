@@ -15,6 +15,19 @@ data/
 
 # Debug output
 debug-output-build/
+debug-output*/
+debug-output/
+debug-output-heading-split/
+debug-output-llm-split/
+
+# Electron cache
+.electron-cache/
+.electron-builder-cache/
+
+# User data (runtime generated)
+data/
+state/
+.uploads/
 
 # IDE
 .vscode/
@@ -42,3 +55,15 @@ temp/
 
 # Traineddata (too large for git, downloaded separately)
 *.traineddata
+
+# Zip archives
+*.zip
+
+# Deploy mirror
+deploy/
+
+# Empty legacy dirs
+ui/
+
+# Test scripts
+test_build_graph.mjs

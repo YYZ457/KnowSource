@@ -69,6 +69,8 @@ async function withRetry(fn, options = {}) {
     } catch (e) {
       // 已达最大重试次数，直接抛出
       if (attempt === maxRetries) throw e;
+      // 不可恢复的错误（如响应格式异常）不重试
+      if (e.unrecoverable) throw e;
       // 4xx（非 429）错误不重试：这类错误重试也无法成功
       if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) throw e;
       // 指数退避等待后重试
@@ -114,6 +116,8 @@ class OllamaLLMProvider {
     this.config = { provider: 'ollama', model, baseUrl };
     // 推断模型能力等级
     this.capabilities = inferCapabilities('ollama', model);
+    // embed 模型：允许通过 options.embedModel 指定，默认 nomic-embed-text
+    this.embedModel = null; // 由外部设置或使用默认
   }
 
   async complete(prompt, options = {}) {
@@ -181,7 +185,7 @@ class OllamaLLMProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
-        body: JSON.stringify({ model: 'nomic-embed-text', prompt: text })
+        body: JSON.stringify({ model: this.embedModel || 'nomic-embed-text', prompt: text })
       });
       if (!resp.ok) throw new Error(`Ollama embed failed: ${resp.status}`);
       const data = await resp.json();
@@ -396,7 +400,16 @@ class OpenAICompatibleLLMProvider {
           throw err;
         }
         const data = await resp.json();
-        return data.choices[0].message.content;
+        // 空值保护：部分兼容服务在限流/错误时返回非标准结构
+        const content = data?.choices?.[0]?.message?.content;
+        if (content == null) {
+          // 修复：设置 status=200 使 withRetry 跳过重试（非 4xx/5xx，但内容不可恢复）
+          const err = new Error(`LLM 响应格式异常：未找到 choices[0].message.content（status ${resp.status}）`);
+          err.status = 200; // 标记为不可恢复（非网络错误、非限流）
+          err.unrecoverable = true;
+          throw err;
+        }
+        return content;
       } finally {
         clearTimeout(timer);
       }
@@ -406,27 +419,17 @@ class OpenAICompatibleLLMProvider {
   }
 
   async embed(text) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-    try {
-      const resp = await fetch(`${this.baseUrl}/embeddings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
-        },
-        body: JSON.stringify({ model: 'text-embedding-3-small', input: text }),
-        signal: controller.signal
-      });
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        throw new Error(`OpenAI-compatible embed failed: ${resp.status} ${errText.slice(0, 200)}`);
-      }
-      const data = await resp.json();
-      return data.data[0].embedding;
-    } finally {
-      clearTimeout(timeout);
-    }
+    // 复用 embedding-provider 的厂商预设模型，而非硬编码 OpenAI 的模型
+    const { createProvider: createEmbeddingProvider, EMBEDDING_PRESETS } = await import('./embedding-provider.js');
+    // 动态导入避免循环依赖
+    const embedModel = EMBEDDING_PRESETS[this.vendor] || 'text-embedding-3-small';
+    const provider = createEmbeddingProvider(this.vendor === 'openai' ? 'openai' : 'openai-compatible', {
+      apiKey: this.apiKey,
+      model: embedModel,
+      baseUrl: this.baseUrl,
+      vendor: this.vendor
+    });
+    return provider.embed(text);
   }
 }
 
@@ -471,6 +474,10 @@ export function createLLMProvider(type, options = {}) {
     case 'openai-compatible': {
       const v = options.vendor || 'openai';
       const preset = VENDOR_PRESETS[v] || VENDOR_PRESETS.custom;
+      // 校验 apiKey：非 stub/ollama 厂商需要 API Key
+      if (preset.needApiKey && !options.apiKey) {
+        throw new Error(`${v} 服务商需要 API Key，请在模型配置中填写`);
+      }
       return new OpenAICompatibleLLMProvider({
         ...options,
         vendor: v,
@@ -486,6 +493,9 @@ export function createLLMProvider(type, options = {}) {
     case 'zhipu':
     case 'custom': {
       const preset = VENDOR_PRESETS[type] || VENDOR_PRESETS.custom;
+      if (preset.needApiKey && !options.apiKey) {
+        throw new Error(`${type} 服务商需要 API Key，请在模型配置中填写`);
+      }
       return new OpenAICompatibleLLMProvider({
         ...options,
         vendor: type,

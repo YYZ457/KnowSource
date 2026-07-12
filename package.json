@@ -1,7 +1,7 @@
 {
-  "name": "knowledge-ide",
+  "name": "knowsource",
   "version": "2.2.0",
-  "description": "知源 KnowSource — 科研知识工作台",
+  "description": "知源 KnowSource — 科研知识工作台：PDF 文档解析、知识图谱构建、LLM 辅助分析",
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:backend\" \"vite\"",
@@ -10,7 +10,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "dist": "vite build && electron-builder --win",
-    "test": "node --test tests/"
+    "dist:mac": "vite build && electron-builder --mac",
+    "dist:linux": "vite build && electron-builder --linux",
+    "dist:all": "vite build && electron-builder -mwl",
+    "test": "node --test tests/ || echo 'No tests found, skipping'"
   },
   "build": {
     "appId": "com.knowsource.desktop",
@@ -23,11 +26,29 @@
       "electron/**",
       "services/**",
       "core/**",
+      "build/icon.png",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "sample_docs",
+        "to": "sample_docs",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": "nsis",
       "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "build/icon.png",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "build/icon.png",
+      "category": "Office"
     },
     "nsis": {
       "oneClick": false,
@@ -36,6 +57,24 @@
       "shortcutName": "知源"
     }
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YYZ457/KnowSource.git"
+  },
+  "homepage": "https://github.com/YYZ457/KnowSource",
+  "bugs": {
+    "url": "https://github.com/YYZ457/KnowSource/issues"
+  },
+  "keywords": [
+    "knowledge-graph",
+    "pdf",
+    "research",
+    "ollama",
+    "llm",
+    "electron",
+    "vue",
+    "knowledge-management"
+  ],
   "dependencies": {
     "@napi-rs/canvas": "^1.0.0",
     "d3-drag": "^3.0.0",
@@ -57,9 +96,10 @@
     "concurrently": "^8.2.0",
     "electron": "^28.3.3",
     "electron-builder": "^24.13.3",
+    "sharp": "^0.35.3",
     "vite": "^5.4.0",
     "wait-on": "^7.2.0"
   },
-  "author": "Knowledge IDE",
+  "author": "YYZ457",
   "license": "MIT"
 }

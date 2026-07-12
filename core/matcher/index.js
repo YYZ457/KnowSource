@@ -128,13 +128,24 @@ export async function match(query, options = {}) {
   const embedFn = options.embedFn || (async () => []);
   // 四层默认权重（总和 = 1.0）。兼容旧版仅传 tfidf/semantic/graph 的权重对象：
   // 缺失的层权重默认为 0，不影响已有行为。
-  const rawWeights = options.weights || { keyword: 0.2, tfidf: 0.3, semantic: 0.3, graph: 0.2 };
+  // 修复：空对象 {} 是 truthy，会导致所有权重为 0、结果为空。需检查 keys 长度。
+  const rawWeights = (options.weights && Object.keys(options.weights).length > 0)
+    ? options.weights
+    : { keyword: 0.2, tfidf: 0.3, semantic: 0.3, graph: 0.2 };
   const weights = {
     keyword: rawWeights.keyword ?? 0,
     tfidf: rawWeights.tfidf ?? 0,
     semantic: rawWeights.semantic ?? 0,
     graph: rawWeights.graph ?? 0
   };
+  // 归一化权重，确保总和为 1.0（避免用户传入非归一化权重导致分数超出 [0,1]）
+  const weightSum = weights.keyword + weights.tfidf + weights.semantic + weights.graph;
+  if (weightSum > 0 && Math.abs(weightSum - 1) > 0.001) {
+    weights.keyword /= weightSum;
+    weights.tfidf /= weightSum;
+    weights.semantic /= weightSum;
+    weights.graph /= weightSum;
+  }
 
   const results = [];
 
@@ -142,13 +153,28 @@ export async function match(query, options = {}) {
   const queryKeywords = extractKeywords(query, 10);
 
   // TF-IDF 预计算（如果需要）
+  // 修复：原代码按文档级计算 TF-IDF，导致同一文档内所有 section 得分相同。
+  // 改为按 section 级计算，使 section 间排序有意义。
   let tfidfData = null;
   let queryVec = null;
+  let sectionIndexMap = null; // Map<docIdx_sectionId, vectorIdx>
   if (strategy === 'tfidf' || strategy === 'hybrid') {
-    const docTexts = documents.map(d => d.rawText || d.sections?.map(s => s.content).join(' ') || '');
-    // 先用文档计算IDF（不包含query，避免query污染IDF）
-    tfidfData = computeTfIdf(docTexts);
-    // 再用已有IDF将query转向量
+    const sectionTexts = [];
+    sectionIndexMap = new Map();
+    for (let di = 0; di < documents.length; di++) {
+      const doc = documents[di];
+      const sections = doc.sections && doc.sections.length > 0
+        ? doc.sections
+        : [{ id: 'full', content: doc.rawText || '' }];
+      for (const sec of sections) {
+        const key = `${di}_${sec.id}`;
+        sectionIndexMap.set(key, sectionTexts.length);
+        sectionTexts.push(sec.content || '');
+      }
+    }
+    // 用 section 文本计算 IDF（不包含 query，避免 query 污染 IDF）
+    tfidfData = computeTfIdf(sectionTexts);
+    // 再用已有 IDF 将 query 转向量
     queryVec = queryToVector(query, tfidfData.idf);
   }
 
@@ -156,6 +182,7 @@ export async function match(query, options = {}) {
   let matchedQueryNodeId = null;
   let pprScores = null;
   let graphNodeList = null;
+  let sectionNodeIndex = null; // 预建索引，O(1) 查找
   if ((strategy === 'graph' || strategy === 'hybrid') && graph) {
     try {
       // searchByContent 只需执行一次，找到与查询最相关的节点
@@ -169,6 +196,14 @@ export async function match(query, options = {}) {
       graphNodeList = Array.isArray(graph.nodes)
         ? graph.nodes
         : (graph.nodes instanceof Map ? Array.from(graph.nodes.values()) : Object.values(graph.nodes));
+      // 修复：预建 section → graphNode 的索引，避免循环内 O(n) find
+      sectionNodeIndex = new Map();
+      for (const n of graphNodeList) {
+        if (n.source?.docId && n.source?.sectionId) {
+          const key = `${n.source.docId}_${n.source.sectionId}`;
+          if (!sectionNodeIndex.has(key)) sectionNodeIndex.set(key, n);
+        }
+      }
     } catch (e) {
       // 图查询初始化失败时降级为 0 分，不影响其他层
       console.warn('[matcher] 图结构预计算失败，图层级降级为 0:', e.message);
@@ -188,11 +223,15 @@ export async function match(query, options = {}) {
 
   for (let docIdx = 0; docIdx < documents.length; docIdx++) {
     const doc = documents[docIdx];
-    const sections = doc.sections || [{ id: 'full', content: doc.rawText || '', keywords: [] }];
+    const sections = (doc.sections && doc.sections.length > 0)
+      ? doc.sections
+      : [{ id: 'full', content: doc.rawText || '', keywords: [] }];
     for (const section of sections) {
       const result = {
         docId: doc.meta?.docId || doc.docId || '',
+        docName: doc.meta?.docName || doc.name || '',
         sectionId: section.id,
+        sectionTitle: section.title || '',
         score: 0,
         breakdown: {}
       };
@@ -204,9 +243,12 @@ export async function match(query, options = {}) {
       }
 
       // ---- 第 2 层：TF-IDF（余弦相似度）----
+      // 修复：使用 section 级 TF-IDF 向量，而非文档级
       if (strategy === 'tfidf' || strategy === 'hybrid') {
-        if (tfidfData && docIdx < tfidfData.vectors.length) {
-          result.breakdown.tfidf = cosineSimilarity(queryVec, tfidfData.vectors[docIdx]);
+        const sectionKey = `${docIdx}_${section.id}`;
+        const vecIdx = sectionIndexMap?.get(sectionKey);
+        if (tfidfData && vecIdx !== undefined && vecIdx < tfidfData.vectors.length) {
+          result.breakdown.tfidf = cosineSimilarity(queryVec, tfidfData.vectors[vecIdx]);
         } else {
           result.breakdown.tfidf = 0;
         }
@@ -218,9 +260,15 @@ export async function match(query, options = {}) {
           if (queryEmbedding) {
             // 复用查询 embedding，只需计算 section 的 embedding
             const sectionEmbedding = await getEmbedding(section.content || '', embedFn);
-            const m1 = new Map(queryEmbedding.map((v, i) => [String(i), v]));
-            const m2 = new Map(sectionEmbedding.map((v, i) => [String(i), v]));
-            result.breakdown.semantic = cosineSimilarity(m1, m2);
+            // 修复：维度不一致时直接归零，避免得到错误的偏低相似度
+            if (!Array.isArray(sectionEmbedding) || sectionEmbedding.length !== queryEmbedding.length) {
+              console.warn('[matcher] embedding 维度不匹配: query=' + queryEmbedding.length + ', section=' + (sectionEmbedding?.length || 'N/A'));
+              result.breakdown.semantic = 0;
+            } else {
+              const m1 = new Map(queryEmbedding.map((v, i) => [String(i), v]));
+              const m2 = new Map(sectionEmbedding.map((v, i) => [String(i), v]));
+              result.breakdown.semantic = cosineSimilarity(m1, m2);
+            }
           } else {
             result.breakdown.semantic = 0;
           }
@@ -233,14 +281,19 @@ export async function match(query, options = {}) {
       if (strategy === 'graph' || strategy === 'hybrid') {
         try {
           if (graph && matchedQueryNodeId && graphNodeList) {
-            // 找到该 section 对应的图节点（兼容不同 source 结构）
-            const sectionNode = graphNodeList.find(n =>
-              n.source?.docId === result.docId && (
-                n.source?.sectionId === section.id ||
-                n.source?.heading === section.title ||
-                n.id === section.id
-              )
-            );
+            // 修复：O(1) 索引查找，替代 O(n) find
+            const sectionKey = `${result.docId}_${section.id}`;
+            let sectionNode = sectionNodeIndex?.get(sectionKey);
+            // 兜底：索引未命中时回退到线性查找（兼容 heading/id 匹配）
+            if (!sectionNode) {
+              sectionNode = graphNodeList.find(n =>
+                n.source?.docId === result.docId && (
+                  n.source?.sectionId === section.id ||
+                  (section.title && n.source?.heading === section.title) ||
+                  n.id === section.id
+                )
+              );
+            }
             if (sectionNode) {
               result.breakdown.graph = graphMatchScore(graph, matchedQueryNodeId, sectionNode.id, pprScores);
             } else {

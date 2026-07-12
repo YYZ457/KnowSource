@@ -2,6 +2,7 @@
  *  职责：API 路由网关，支持 HTTP 与 IPC 双通道
  */
 import { parseHandler, getDocuments, deleteDocument, serveDocumentPdf, pauseParse, resumeParse, cancelParse } from './handlers/parse.js';
+import { importSampleDoc } from './handlers/sample-doc.js';
 import { reorderDocuments } from './handlers/documents.js';
 import { extractHandler, modelTestHandler } from './handlers/extract.js';
 import { graphBuildHandler, rebuildCrossLinksHandler } from './handlers/graph-build.js';
@@ -94,6 +95,7 @@ const routes = [
   { method: 'POST', path: '/parse/cancel', handler: cancelParse },
   { method: 'GET', path: '/documents', handler: getDocuments },
   { method: 'POST', path: '/documents/delete', handler: deleteDocument },
+  { method: 'POST', path: '/documents/import-sample', handler: importSampleDoc },
   { method: 'POST', path: '/documents/reorder', handler: reorderDocuments },
   { method: 'POST', path: '/extract', handler: extractHandler },
   { method: 'POST', path: '/extract/model-test', handler: modelTestHandler },
@@ -147,12 +149,20 @@ const routes = [
  * @param {import('http').ServerResponse} res
  */
 export async function handleHttpRequest(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  let url;
+  try {
+    url = new URL(req.url, `http://${req.headers.host || '127.0.0.1'}`);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Bad Request' }));
+    return;
+  }
   const path = url.pathname;
   const method = req.method;
 
   // 速率限制：防止重操作接口被滥用或导致 DoS
-  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+  // 本地服务优先使用 socket 地址，避免 x-forwarded-for 可伪造
+  const clientIp = req.socket?.remoteAddress?.replace(/^::ffff:/, '') || 'unknown';
   const rateLimit = checkRateLimit(clientIp, path);
   if (!rateLimit.allowed) {
     res.writeHead(429, {
@@ -201,7 +211,8 @@ export async function handleHttpRequest(req, res) {
   }
 
   // PDF 原始文件流式返回（避免 Electron 中 blob URL 在 iframe 内渲染异常）
-  const pdfMatch = method === 'GET' && path.match(/^\/documents\/([^/]+)\/pdf$/);
+  // 同时支持 HEAD 预检请求（前端 checkPdfAccessible 用 HEAD 检查可达性）
+  const pdfMatch = (method === 'GET' || method === 'HEAD') && path.match(/^\/documents\/([^/]+)\/pdf$/);
   if (pdfMatch) {
     // iframe / webview 无法携带自定义请求头，允许通过 URL query 携带 token 进行认证
     const queryToken = url.searchParams.get('token');
@@ -212,6 +223,15 @@ export async function handleHttpRequest(req, res) {
     }
     try {
       const { buffer, name } = serveDocumentPdf({ id: decodeURIComponent(pdfMatch[1]) });
+      // HEAD 请求只返回头部，不返回 body
+      if (method === 'HEAD') {
+        res.writeHead(200, {
+          'Content-Type': 'application/pdf',
+          'Content-Length': buffer.length
+        });
+        res.end();
+        return;
+      }
       // 对文件名做 RFC 5987 编码，避免中文、括号、引号等特殊字符导致 HTTP 头非法。
       // 安全加固：name 来源于用户上传时提供的文件名，先剥离 CR/LF 等控制字符及引号/反斜杠，
       // 否则可构造 "x\r\nSet-Cookie: ..." 之类的文件名实施 HTTP 响应拆分 / 头注入。
@@ -238,7 +258,11 @@ export async function handleHttpRequest(req, res) {
     if (r.pattern) {
       const match = path.match(r.pattern);
       if (match) {
-        pathParams = match.slice(1).map(decodeURIComponent);
+        // 安全解码 URL 参数，避免非法 percent-encoding 导致 URIError
+        pathParams = match.slice(1).map(s => {
+          try { return decodeURIComponent(s); }
+          catch { return s; }
+        });
         return true;
       }
       return false;
@@ -247,32 +271,41 @@ export async function handleHttpRequest(req, res) {
   });
   if (!route) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: `Not Found: ${method} ${path}` }));
+    res.end(JSON.stringify({ error: 'Not Found' }));
     return;
   }
 
   // 解析请求体
   let body = {};
   if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
-    const chunks = [];
-    let totalSize = 0;
-    // /parse 接口需容纳 base64 膨胀的 PDF，放宽到 200MB；其他接口限制 10MB
-    const MAX_BODY_SIZE = path === '/parse' ? 200 * 1024 * 1024 : 10 * 1024 * 1024;
-    for await (const chunk of req) {
-      totalSize += chunk.length;
-      if (totalSize > MAX_BODY_SIZE) {
-        res.writeHead(413, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Request body too large' }));
+    try {
+      const chunks = [];
+      let totalSize = 0;
+      // /parse 接口需容纳 base64 膨胀的 PDF，放宽到 200MB；其他接口限制 10MB
+      const MAX_BODY_SIZE = path === '/parse' ? 200 * 1024 * 1024 : 10 * 1024 * 1024;
+      for await (const chunk of req) {
+        totalSize += chunk.length;
+        if (totalSize > MAX_BODY_SIZE) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Request body too large' }));
+          return;
+        }
+        chunks.push(chunk);
+      }
+      const raw = Buffer.concat(chunks).toString('utf-8');
+      try {
+        body = raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: 'Invalid JSON: ' + e.message }));
         return;
       }
-      chunks.push(chunk);
-    }
-    const raw = Buffer.concat(chunks).toString('utf-8');
-    try {
-      body = raw ? JSON.parse(raw) : {};
-    } catch (e) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: 'Invalid JSON: ' + e.message }));
+    } catch (streamErr) {
+      // 客户端断开连接等流读取异常
+      if (!res.headersSent) {
+        res.writeHead(499, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Client disconnected' }));
+      }
       return;
     }
   } else if (method === 'GET') {

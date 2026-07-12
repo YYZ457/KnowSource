@@ -70,8 +70,8 @@
             <label>标签（逗号分隔）</label>
             <input
               type="text"
-              :value="tagsString"
-              @input="onTagsInput"
+              v-model="tagInputStr"
+              @blur="onTagsBlur"
               placeholder="知识图谱, 待验证"
             />
           </div>
@@ -98,7 +98,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useIdeaStore, useGraphStore, useUiStore } from '../stores'
 import { ideaApi } from '../api/client'
 
@@ -146,10 +146,18 @@ const tagsString = computed(() => {
   return ideaTags(idea).join(', ')
 })
 
+// 标签输入使用本地字符串，避免每次输入时立即分割导致逗号被吞掉
+const tagInputStr = ref('')
+watch(tagsString, (v) => { tagInputStr.value = v }, { immediate: true })
+
 function onTagsInput(e) {
+  tagInputStr.value = e.target.value
+}
+
+function onTagsBlur() {
   const idea = ideaStore.selectedIdea
   if (!idea) return
-  idea.tags = e.target.value
+  idea.tags = tagInputStr.value
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
@@ -168,8 +176,12 @@ async function onCreate() {
       content: '',
       tags: [],
     })
-    if (idea) ideaStore.selectedIdea = idea
-    uiStore.toast('已新建灵感', 'success')
+    if (idea && idea.id) {
+      ideaStore.selectedIdea = idea
+      uiStore.toast('已新建灵感', 'success')
+    } else {
+      uiStore.toast('新建灵感失败', 'error')
+    }
   } catch (e) {
     uiStore.toast('新建失败：' + e.message, 'error')
   }
@@ -185,6 +197,9 @@ async function onSave() {
       content: idea.content,
       tags: idea.tags || [],
     })
+    // 保存后 store 中 ideas 数组的元素已被替换为新对象
+    // 同步更新 selectedIdea 引用，避免编辑器与列表不同步
+    ideaStore.selectedIdea = ideaStore.ideas.find(i => i.id === idea.id) || ideaStore.selectedIdea
     uiStore.toast('灵感已保存', 'success')
   } catch (e) {
     uiStore.toast('保存失败：' + e.message, 'error')

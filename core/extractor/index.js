@@ -132,9 +132,12 @@ function tokenize(text) {
           chineseStr += remaining[0];
           remaining = remaining.substring(1);
         }
-        // 生成2字n-gram作为候选token，避免单字噪音
-        for (let i = 0; i < chineseStr.length - 1; i++) {
-          tokens.push(chineseStr.substr(i, 2));
+        // 生成2字n-gram作为候选token，但标记为 ngram 类型以便后续过滤
+        // 修复：只有连续中文段 >=4 字时才生成 n-gram，短段直接跳过避免碎片
+        if (chineseStr.length >= 4) {
+          for (let i = 0; i < chineseStr.length - 1; i++) {
+            tokens.push(chineseStr.substr(i, 2));
+          }
         }
         continue;
       } else if (/[a-zA-Z0-9]/.test(ch)) {
@@ -206,10 +209,20 @@ function extractKeywords(text, topN = 15, idfMap = null) {
   ]);
   const termSet = new Set(ALL_TERMS);
 
+  // 修复：先收集术语匹配结果，用于后续过滤碎片 n-gram
+  const matchedTerms = new Set();
+  for (const word of Object.keys(tf)) {
+    if (termSet.has(word)) matchedTerms.add(word);
+  }
+
   const keywords = [];
   for (const [word, count] of Object.entries(tf)) {
     // 保留：术语 或 （长度>1且非停用词且非纯数字/科学计数法）
     if (termSet.has(word) || (word.length >= 2 && !stopWords.has(word) && !/^[\d\.\-\+eE×x⁻]+$|^[\d]+[a-zA-Z]{1,2}$/.test(word))) {
+      // 修复：非术语的中文 2-gram 一律跳过（碎片太多，只保留术语和 3 字以上词）
+      if (word.length === 2 && !termSet.has(word) && /[\u4e00-\u9fa5]/.test(word)) {
+        continue;
+      }
       // 术语权重提升
       const weight = termSet.has(word) ? 3 : 1;
       // IDF加权：当提供idfMap时，使用真正的TF-IDF；否则退化为纯TF
@@ -225,19 +238,21 @@ function extractKeywords(text, topN = 15, idfMap = null) {
 // ============ 6. 教材章节切分 ============
 // 优先复用 extractHeadings 的标题树（与 headings.js 一致），无标题时回退正则
 function splitTextbook(text, options = {}) {
+  // 修复：防御 null/undefined text 导致后续 text.slice 崩溃
+  const safeText = text || '';
   let chapters;
   // 优先使用传入的标题树切分
   if (options.headings && options.headings.length > 0) {
-    chapters = splitByHeadings(text, options.headings);
+    chapters = splitByHeadings(safeText, options.headings);
     if (chapters.length > 0) return applyIdfToChapters(chapters);
   }
   // 回退：尝试用 extractHeadings 自动提取标题树
   try {
-    const tree = extractHeadings(text, { fontSizeStats: options.fontSizeStats });
+    const tree = extractHeadings(safeText, { fontSizeStats: options.fontSizeStats });
     if (tree && tree.length > 0) {
       const flat = flattenHeadings(tree);
       if (flat.length > 0) {
-        chapters = splitByHeadings(text, flat);
+        chapters = splitByHeadings(safeText, flat);
         if (chapters.length > 0) return applyIdfToChapters(chapters);
       }
     }
@@ -245,7 +260,7 @@ function splitTextbook(text, options = {}) {
     // extractHeadings 失败时回退正则
   }
   // 最终回退：正则模式
-  chapters = splitByTextbookRegex(text);
+  chapters = splitByTextbookRegex(safeText);
   return applyIdfToChapters(chapters);
 }
 

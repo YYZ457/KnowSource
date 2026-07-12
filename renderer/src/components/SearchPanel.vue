@@ -13,14 +13,18 @@
       </div>
 
       <div class="search-dropdown__body">
-        <div v-if="!uiStore.searchResults.length" class="empty-state">
+        <div v-if="uiStore.searching" class="empty-state">
+          <div class="search-spinner"></div>
+          <p>正在搜索...</p>
+        </div>
+        <div v-else-if="!uiStore.searchResults.length" class="empty-state">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           <p>暂无搜索结果</p>
         </div>
 
         <button
           v-for="(r, i) in uiStore.searchResults"
-          :key="i"
+          :key="resultKey(r, i)"
           class="search-result"
           @click="onSelect(r)"
         >
@@ -36,7 +40,7 @@
               {{ resultDoc(r) }}
             </span>
             <span v-if="r.page || r.pageNumber" class="tag tag--violet">第 {{ r.page || r.pageNumber }} 页</span>
-            <span v-if="r.score != null && r.score !== ''" class="tag tag--emerald">{{ Math.round((Number(r.score) || 0) * 100) }}%</span>
+            <span v-if="r.score != null && r.score !== ''" class="tag tag--emerald">{{ r.score }} 处匹配</span>
             <span v-if="r.type || r.kind" class="tag tag--amber">{{ r.type || r.kind }}</span>
           </div>
         </button>
@@ -80,16 +84,32 @@ onUnmounted(() => {
 
 // ===== 结果字段（兼容多种返回结构） =====
 function resultTitle(r) {
-  return r.title || r.heading || r.name || r.subject || '搜索结果'
+  if (r.title || r.heading || r.name || r.subject) return r.title || r.heading || r.name || r.subject
+  //  fallback: use docName + page as title
+  const doc = r.docName || r.document || r.source || ''
+  const page = r.page || r.pageNumber
+  if (doc && page) return `${doc} — 第 ${page} 页`
+  if (doc) return doc
+  return '搜索结果'
 }
 function resultSnippet(r) {
-  return r.snippet || r.text || r.content || r.preview || r.excerpt || ''
+  const raw = r.snippet || r.text || r.content || r.preview || r.excerpt || ''
+  // Clean [fsXX] and [bookmark:LXX] markers
+  return raw.replace(/\[fs\d+(?:\.\d+)?\]/g, '').replace(/\[bookmark:L\d+\]/g, '')
 }
 function resultDoc(r) {
   return r.document || r.docName || r.doc_name || r.source || r.filename || ''
 }
 function resultDocId(r) {
   return r.docId || r.document_id || r.documentId || r.doc_id || r.id || null
+}
+
+// 稳定的 key：避免使用 index 导致重新渲染时 DOM 复用错误
+function resultKey(r, i) {
+  const docId = resultDocId(r) || resultDoc(r) || 'unknown'
+  const page = r.page || r.pageNumber || 0
+  const matchIdx = r.matchIndex != null ? r.matchIndex : i
+  return `${docId}-${page}-${matchIdx}`
 }
 
 // ===== 高亮查询词 =====
@@ -109,7 +129,9 @@ function highlight(text) {
   const safe = escapeHtml(text || '')
   if (!q) return safe
   try {
-    const re = new RegExp('(' + escapeRegExp(q) + ')', 'gi')
+    // 对查询词也做 HTML 实体转义，使其与转义后的文本匹配
+    const safeQuery = escapeHtml(q)
+    const re = new RegExp('(' + escapeRegExp(safeQuery) + ')', 'gi')
     return safe.replace(re, '<mark>$1</mark>')
   } catch {
     return safe
@@ -145,6 +167,18 @@ async function onSelect(r) {
   display: flex;
   flex-direction: column;
   max-height: 60vh;
+}
+.search-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-cyan, #00eaff);
+  border-radius: 50%;
+  animation: search-spin 0.8s linear infinite;
+  margin: 0 auto 8px;
+}
+@keyframes search-spin {
+  to { transform: rotate(360deg); }
 }
 .search-dropdown__head {
   display: flex;

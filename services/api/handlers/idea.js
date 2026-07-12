@@ -13,9 +13,34 @@ export function listIdeas() {
   return Array.from(storage.ideas.values());
 }
 
+/**
+ * 检查将 ideaId 的 parentId 设为 newParentId 是否会形成循环引用
+ * 防止 parentId 环导致 sortIdeasByDepth 无限递归
+ */
+function wouldCreateCycle(ideaId, newParentId) {
+  if (!newParentId || newParentId === ideaId) return true;
+  let current = newParentId;
+  const visited = new Set();
+  while (current) {
+    if (current === ideaId) return true;
+    if (visited.has(current)) return true; // 已有环
+    visited.add(current);
+    const parent = storage.ideas.get(current);
+    current = parent?.parentId || null;
+  }
+  return false;
+}
+
 export function createIdea({ title, content, tags = [], relatedNodeIds = [], folder = '', includeInGraph = true, color = '', parentId = null } = {}) {
   if (isProjectSwitching()) {
     return { success: false, error: '项目正在切换中，请稍后再试' };
+  }
+  // 输入长度校验
+  if (title && title.length > 200) return { success: false, error: '标题不能超过 200 字符' };
+  if (content && content.length > 100000) return { success: false, error: '内容不能超过 100000 字符' };
+  // 校验 parentId 不形成环（新 Idea 的 id 尚未生成，检查自引用即可）
+  if (parentId && !storage.ideas.has(parentId)) {
+    return { success: false, error: '父节点不存在' };
   }
   const id = 'idea-' + randomUUID().slice(0, 8);
   const idea = {
@@ -58,6 +83,25 @@ export function updateIdea({ id, ...patch } = {}) {
     if (key in patch) {
       safePatch[key] = patch[key];
     }
+  }
+  // 校验 parentId 不形成环
+  if (safePatch.parentId !== undefined) {
+    const newParentId = safePatch.parentId || null;
+    if (newParentId && !storage.ideas.has(newParentId)) {
+      return { success: false, error: '父节点不存在' };
+    }
+    if (newParentId && wouldCreateCycle(id, newParentId)) {
+      return { success: false, error: '不能将父节点设为自身或子节点，会形成循环引用' };
+    }
+  }
+  // 类型校验 tags 和 relatedNodeIds
+  if (safePatch.tags !== undefined && !Array.isArray(safePatch.tags)) {
+    safePatch.tags = typeof safePatch.tags === 'string'
+      ? safePatch.tags.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+  }
+  if (safePatch.relatedNodeIds !== undefined && !Array.isArray(safePatch.relatedNodeIds)) {
+    safePatch.relatedNodeIds = [];
   }
   Object.assign(idea, safePatch, { updatedAt: Date.now() });
   storage.ideas.set(id, idea);
@@ -166,6 +210,11 @@ export function linkIdeaToNode({ ideaId, nodeId } = {}) {
   }
   if (!nodeId) {
     return { success: false, error: '缺少节点 ID' };
+  }
+  // 校验目标节点在图谱中存在，避免悬空引用
+  const nodeExists = storage.graph.nodes.some(n => n.id === nodeId);
+  if (!nodeExists) {
+    return { success: false, error: '关联的图谱节点不存在' };
   }
   const idea = storage.ideas.get(ideaId);
   if (!idea.relatedNodeIds.includes(nodeId)) {
@@ -464,6 +513,8 @@ function sortIdeasByDepth(ideas) {
       depthCache.set(id, 0);
       return 0;
     }
+    // 提前写入缓存防止环导致无限递归
+    depthCache.set(id, 0);
     const d = getDepth(idea.parentId) + 1;
     depthCache.set(id, d);
     return d;

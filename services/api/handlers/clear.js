@@ -2,9 +2,9 @@
  *  清空所有数据（文档、图谱、Idea）
  */
 import { randomUUID } from 'node:crypto';
-import { storage } from '../../storage.js';
-import { resetStorageWriteError } from '../../storage.js';
+import { storage, resetStorageWriteError, isProjectSwitching, getUploadsDir } from '../../storage.js';
 import { terminateOcrWorker } from '../../../core/parser/index.js';
+import { rmSync } from 'node:fs';
 
 // 清空操作的二次确认令牌，存储在内存中。
 // 服务端启动时生成，每次成功清空后轮换，防止重放攻击和一键误清空。
@@ -39,10 +39,15 @@ initClearToken();
  * @param {{ confirmToken?: string }} params
  * @returns {{ success: true, newToken: string } | { status: number, error: string }}
  */
-export function clearAll({ confirmToken } = {}) {
+export async function clearAll({ confirmToken } = {}) {
   // 1. 二次确认令牌校验
   if (confirmToken !== clearConfirmToken) {
     return { status: 403, error: '确认令牌无效或已过期，请重新获取后再试' };
+  }
+
+  // 修复：检查项目切换中状态，避免清空新加载的项目数据
+  if (isProjectSwitching()) {
+    return { status: 409, error: '项目正在切换中，无法清空' };
   }
 
   // 2. 任务运行状态检查（构建中 / 解析中 / 暂停中均禁止清空，避免任务完成后覆盖清空结果）
@@ -61,6 +66,25 @@ export function clearAll({ confirmToken } = {}) {
   g.nodes = [];
   g.edges = [];
   g.stats = {};
+
+  // 修复：清理向量库，避免旧向量串到清空后的新数据
+  try {
+    const { getVectorStore } = await import('../../vector-store.js');
+    const vecStore = getVectorStore();
+    if (vecStore && typeof vecStore.clear === 'function') {
+      await vecStore.clear();
+    }
+  } catch (e) {
+    console.warn('[clear] 清理向量库失败:', e.message);
+  }
+
+  // 修复：清理 uploads 目录中的二进制文件
+  try {
+    const uploadsDir = getUploadsDir();
+    rmSync(uploadsDir, { recursive: true, force: true });
+  } catch (e) {
+    console.warn('[clear] 清理 uploads 目录失败:', e.message);
+  }
 
   // 4. 重置相关运行状态和错误标记
   storage.taskProgress = { taskId: null, status: 'idle', stage: '', percent: 0, log: '' };

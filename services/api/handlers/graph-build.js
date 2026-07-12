@@ -102,6 +102,14 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
     }));
   }
 
+  // 调试日志：检查 bookmarks 是否正确传递
+  if (docs && docs.length > 0) {
+    console.log('[graph-build] docs[0].bookmarks.length:', docs[0].bookmarks?.length || 0);
+    if (docs[0].bookmarks?.length > 0) {
+      console.log('[graph-build] first bookmark:', JSON.stringify(docs[0].bookmarks[0]));
+    }
+  }
+
   // 如果指定了 docIds，只保留对应文档（支持为单个文档增量生成图谱）
   const isIncremental = !!(docIds && docIds.length > 0);
   if (isIncremental) {
@@ -110,7 +118,7 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
   }
 
   if (!docs || docs.length === 0) {
-    storage.setTaskProgress({ stage: 'error', percent: 100, log: '没有可用的文档' });
+    storage.setTaskProgress({ status: 'error', stage: 'error', percent: 100, log: '没有可用的文档' });
     const message = docIds && docIds.length > 0
       ? `未找到指定的文档：${docIds.join(', ')}`
       : '没有可用的文档';
@@ -153,7 +161,7 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
 
   // 构建过程中项目可能被切换/删除，检查项目一致性，避免结果写入错误项目
   if (getCurrentProjectId() !== startProjectId) {
-    storage.setTaskProgress({ stage: 'error', percent: 100, log: '项目已切换，构建结果已丢弃' });
+    storage.setTaskProgress({ status: 'error', stage: 'error', percent: 100, log: '项目已切换，构建结果已丢弃' });
     return { success: false, error: '项目已切换，构建结果已丢弃', nodes: [], edges: [], stats: { nodeCount: 0, edgeCount: 0 } };
   }
 
@@ -173,6 +181,14 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
 
   // 跨文档连接已在 pipeline 中完成（按 heading/entity 分别连接），不再重复执行
   const serialized = globalGraph.serialize();
+
+  // 调试：检查序列化后的节点是否保留 label
+  if (serialized.nodes.length > 0) {
+    const sample = serialized.nodes.find(n => n.type === 'heading');
+    console.log('[graph-build] serialized heading keys:', Object.keys(sample || {}));
+    console.log('[graph-build] serialized heading label:', sample?.label);
+    console.log('[graph-build] serialized heading content:', sample?.content);
+  }
 
   // 如果是为单个/部分文档增量生成，合并到已有图谱（按节点 id 去重）
   if (isIncremental && storage.graph && storage.graph.nodes) {
@@ -287,7 +303,7 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
     // 跨文档关联计算包含异步操作，完成后再次检查项目一致性
     if (getCurrentProjectId() !== startProjectId) {
       console.warn('[graph-build] 跨文档关联计算期间项目已切换，丢弃结果');
-      storage.setTaskProgress({ stage: 'error', percent: 100, log: '项目已切换，构建结果已丢弃' });
+      storage.setTaskProgress({ status: 'error', stage: 'error', percent: 100, log: '项目已切换，构建结果已丢弃' });
       return { success: false, error: '项目已切换，构建结果已丢弃', nodes: [], edges: [], stats: { nodeCount: 0, edgeCount: 0 } };
     }
 
@@ -327,13 +343,15 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
     provider: kgProvider?.config || { provider: 'stub', model: '' },
     crossLinkErrors: crossLinkErrors.length > 0 ? crossLinkErrors : undefined
   };
+  } catch (buildErr) {
+    // 捕获构建过程中的异常，更新任务进度为错误状态
+    storage.setTaskProgress({ status: 'error', stage: 'error', percent: 100, log: '构建失败：' + (buildErr.message || buildErr) });
+    throw buildErr;
   } finally {
     // 模块级锁始终释放，确保即使项目切换也不会永久阻塞后续构建
     buildInProgress = false;
-    // 仅当项目未切换时才清除 storage 标志，避免影响新项目的构建状态
-    if (getCurrentProjectId() === startProjectId) {
-      storage.building = false;
-    }
+    // 始终清除 building 标志，buildInProgress 已提供模块级保护
+    storage.building = false;
   }
 }
 
@@ -353,7 +371,7 @@ export async function rebuildCrossLinksHandler({ options } = {}) {
   storage.resetTaskProgress(taskId);
 
   if (!storage.graph || !storage.graph.nodes || storage.graph.nodes.length === 0) {
-    storage.setTaskProgress({ stage: 'error', percent: 100, log: '当前没有知识图谱' });
+    storage.setTaskProgress({ status: 'error', stage: 'error', percent: 100, log: '当前没有知识图谱' });
     return { success: false, error: '当前没有知识图谱', nodes: [], edges: [] };
   }
 
@@ -430,7 +448,7 @@ export async function rebuildCrossLinksHandler({ options } = {}) {
     // 跨文档关联计算包含异步操作，完成后检查项目一致性，避免结果写入错误项目
     if (getCurrentProjectId() !== startProjectId) {
       console.warn('[rebuildCrossLinks] 计算期间项目已切换，丢弃结果');
-      storage.setTaskProgress({ stage: 'error', percent: 100, log: '项目已切换，构建结果已丢弃' });
+      storage.setTaskProgress({ status: 'error', stage: 'error', percent: 100, log: '项目已切换，构建结果已丢弃' });
       return { success: false, error: '项目已切换，构建结果已丢弃', nodes: [], edges: [], stats: { nodeCount: 0, edgeCount: 0 } };
     }
 
@@ -466,14 +484,13 @@ export async function rebuildCrossLinksHandler({ options } = {}) {
     };
   } catch (e) {
     console.error('[rebuildCrossLinks] 失败:', e);
-    storage.setTaskProgress({ stage: 'error', percent: 100, log: '跨文档关联重建失败：' + e.message });
+    storage.setTaskProgress({ status: 'error', stage: 'error', percent: 100, log: '跨文档关联重建失败：' + e.message });
     return { success: false, error: e.message, nodes: storage.graph.nodes, edges: storage.graph.edges };
   } finally {
     // 模块级锁始终释放，确保即使项目切换也不会永久阻塞后续构建
     buildInProgress = false;
-    // 仅当项目未切换时才清除 storage 标志，避免影响新项目的构建状态
-    if (getCurrentProjectId() === startProjectId) {
-      storage.building = false;
-    }
+    // 始终清除 building 标志，buildInProgress 已提供模块级保护
+    // （修复：原代码仅在项目未切换时才清除，导致项目切换后 building 永远卡住）
+    storage.building = false;
   }
 }

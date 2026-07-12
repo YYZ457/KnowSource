@@ -19,6 +19,18 @@
             <option v-for="p in providers" :key="p.key" :value="p.key">{{ p.label }}</option>
           </select>
           <div class="hint">{{ providerHint }}</div>
+          <!-- Ollama 检测状态 -->
+          <div v-if="modelStore.config.provider === 'ollama'" class="ollama-status">
+            <span v-if="ollamaDetecting" class="hint">正在检测 Ollama 服务...</span>
+            <span v-else-if="ollamaDetected" class="hint" style="color: var(--green-6)">
+              Ollama 已连接 · {{ ollamaModels.length }} 个模型可用
+              <button class="btn-text" @click="detectOllamaModels">刷新</button>
+            </span>
+            <span v-else class="hint" style="color: var(--rose-6)">
+              未检测到 Ollama
+              <button class="btn-text" @click="detectOllamaModels">重试</button>
+            </span>
+          </div>
         </div>
 
         <div class="field-row">
@@ -29,7 +41,7 @@
               type="text"
               v-model="modelStore.config.model"
               list="ks-model-suggestions"
-              placeholder="例如 gpt-4o-mini"
+              :placeholder="modelStore.config.provider === 'ollama' ? '从下拉列表选择或手动输入' : '例如 gpt-4o-mini'"
               autocomplete="off"
             />
             <datalist id="ks-model-suggestions">
@@ -93,8 +105,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useModelStore, useUiStore } from '../stores'
+import { settingsApi } from '../api/client'
 
 defineProps({
   embedded: { type: Boolean, default: false },
@@ -102,6 +115,45 @@ defineProps({
 
 const modelStore = useModelStore()
 const uiStore = useUiStore()
+
+// ===== Ollama 动态模型检测 =====
+const ollamaModels = ref([])       // 从 Ollama API 获取的已安装模型列表
+const ollamaDetecting = ref(false) // 检测状态
+const ollamaDetected = ref(false)  // 是否已检测到 Ollama
+
+async function detectOllamaModels() {
+  if (modelStore.config.provider !== 'ollama') return
+  ollamaDetecting.value = true
+  try {
+    const resp = await settingsApi.getOllamaStatus()
+    if (resp.success && resp.available) {
+      ollamaDetected.value = true
+      // resp.models 格式: [{ name: 'qwen2.5:1.5b', size: '...'}, ...]
+      const installed = (resp.models || []).map(m => m.name || m)
+      ollamaModels.value = installed
+      if (installed.length > 0) {
+        // 自动选中第一个模型（仅当当前为空时）
+        if (!modelStore.config.model) {
+          modelStore.config.model = installed[0]
+        }
+        uiStore.toast(`检测到 ${installed.length} 个已安装模型`, 'success')
+      } else {
+        uiStore.toast('Ollama 已运行但未安装模型，请先 ollama pull <model>', 'warn')
+      }
+    } else {
+      ollamaDetected.value = false
+      ollamaModels.value = []
+      const msg = resp.error || '未检测到 Ollama 服务'
+      uiStore.toast(msg + '，请确认已启动 ollama serve', 'error')
+    }
+  } catch (e) {
+    ollamaDetected.value = false
+    ollamaModels.value = []
+    console.warn('[ModelLab] Ollama 检测失败:', e.message)
+  } finally {
+    ollamaDetecting.value = false
+  }
+}
 
 // ===== 厂商预设 =====
 const PROVIDERS = {
@@ -155,9 +207,9 @@ const PROVIDERS = {
   },
   ollama: {
     label: 'Ollama（本地）',
-    hint: '本地推理服务，无需 API Key。',
-    baseUrl: 'http://localhost:11434/v1',
-    models: ['llama3.2', 'qwen2.5', 'deepseek-r1'],
+    hint: '本地推理服务，无需 API Key。选择后自动检测已安装的模型。',
+    baseUrl: 'http://127.0.0.1:11434',
+    models: ['qwen2.5:1.5b', 'qwen2.5:7b', 'deepseek-r1:7b', 'llama3.2:3b', 'nomic-embed-text'],
   },
   custom: {
     label: '自定义',
@@ -171,9 +223,15 @@ const providers = computed(() =>
   Object.entries(PROVIDERS).map(([key, v]) => ({ key, ...v }))
 )
 
-const currentModels = computed(
-  () => PROVIDERS[modelStore.config.provider]?.models || []
-)
+const currentModels = computed(() => {
+  const preset = PROVIDERS[modelStore.config.provider]?.models || []
+  if (modelStore.config.provider === 'ollama') {
+    // Ollama：合并动态检测的模型和预设模型（去重）
+    const set = new Set([...ollamaModels.value, ...preset])
+    return Array.from(set)
+  }
+  return preset
+})
 const providerHint = computed(
   () => PROVIDERS[modelStore.config.provider]?.hint || ''
 )
@@ -200,18 +258,32 @@ const statusTagClass = computed(() => {
 })
 
 const canTest = computed(() => {
-  const { provider, model } = modelStore.config
+  const { provider, model, apiKey } = modelStore.config
   if (provider === 'stub') return true
-  return !!model
+  if (provider === 'ollama') return !!model
+  // 非本地服务需要同时填写 model 和 apiKey
+  return !!model && !!apiKey
 })
 
 const saving = ref(false)
 
-// 切换服务商时自动填充 baseUrl
+// 切换服务商时自动填充 baseUrl，并重置不兼容的依赖字段
 function onProviderChange() {
   const preset = PROVIDERS[modelStore.config.provider]
   if (preset && modelStore.config.provider !== 'custom') {
     modelStore.config.baseUrl = preset.baseUrl
+  }
+  // 重置 model 名称，避免旧 provider 的模型名不适用于新 provider
+  modelStore.config.model = ''
+  // 切换到 stub/ollama 时清空 apiKey（这些 provider 不需要 key）
+  if (modelStore.config.provider === 'stub' || modelStore.config.provider === 'ollama') {
+    modelStore.config.apiKey = ''
+  }
+  // 修复：清除旧的 testResult，避免切换后仍显示上一个 provider 的测试结果
+  modelStore.testResult = null
+  // 切换到 Ollama 时自动检测已安装的模型
+  if (modelStore.config.provider === 'ollama') {
+    detectOllamaModels()
   }
 }
 
@@ -227,6 +299,13 @@ watch(
   { immediate: true }
 )
 
+// 组件挂载时，如果当前已是 Ollama，自动检测模型
+onMounted(() => {
+  if (modelStore.config.provider === 'ollama') {
+    detectOllamaModels()
+  }
+})
+
 async function onTest() {
   await modelStore.test()
   if (modelStore.testResult?.success) {
@@ -237,6 +316,11 @@ async function onTest() {
 }
 
 async function onSave() {
+  // 校验必填字段，复用 canTest 逻辑
+  if (!canTest.value) {
+    uiStore.toast('请先填写完整的模型配置（模型名称、API Key 等）', 'error')
+    return
+  }
   saving.value = true
   try {
     await modelStore.save()
@@ -260,6 +344,26 @@ const resultPreview = computed(() => {
 </script>
 
 <style scoped>
+.ollama-status {
+  margin-top: 4px;
+}
+.ollama-status .hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-text {
+  border: none;
+  background: none;
+  color: var(--blue-6);
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
+}
+.btn-text:hover {
+  color: var(--blue-7);
+}
 .page {
   max-width: 760px;
   margin: 0 auto;

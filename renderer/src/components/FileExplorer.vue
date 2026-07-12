@@ -111,12 +111,14 @@
 
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { useDocsStore, useProjectStore, useUiStore } from '../stores'
+import { useDocsStore, useProjectStore, useUiStore, useGraphStore, useIdeaStore } from '../stores'
 import { parseApi } from '../api/client'
 
 const docsStore = useDocsStore()
 const projectStore = useProjectStore()
 const uiStore = useUiStore()
+const graphStore = useGraphStore()
+const ideaStore = useIdeaStore()
 
 const fileInput = ref(null)
 const importing = ref(false)
@@ -205,10 +207,22 @@ function getParsePercent(docId) {
 
 // ===== 解析进度轮询 =====
 let pollTimer = null
+const pollRetries = {} // 记录每个文档的连续轮询次数，超过上限则停止
+const MAX_POLL_RETRIES = 200 // 200 × 1.5s = 5 分钟超时
+
 async function pollProgress() {
   const parsingDocs = docsStore.documents.filter(d => getStatus(d) === 'parsing')
   if (parsingDocs.length === 0) return
   for (const doc of parsingDocs) {
+    // 超过最大轮询次数，停止轮询该文档并刷新列表
+    pollRetries[doc.id] = (pollRetries[doc.id] || 0) + 1
+    if (pollRetries[doc.id] > MAX_POLL_RETRIES) {
+      delete pollRetries[doc.id]
+      delete docsStore.parseProgress[doc.id]
+      await docsStore.load()
+      uiStore.toast(`文档「${doc.name}」解析超时，请重试`, 'error')
+      continue
+    }
     try {
       const result = await parseApi.getProgress(doc.id)
       const percent = typeof result === 'number' ? result : (result?.percent ?? result?.progress)
@@ -217,6 +231,7 @@ async function pollProgress() {
       }
       // 解析完成则清理进度并刷新列表
       if (percent >= 100 || result?.status === 'done' || result?.status === 'completed') {
+        delete pollRetries[doc.id]
         delete docsStore.parseProgress[doc.id]
         await docsStore.load()
       }
@@ -234,15 +249,22 @@ function onDocClick(doc) {
 async function onProjectChange() {
   if (selectedProjectId.value != null) {
     await projectStore.switchTo(selectedProjectId.value)
-    await docsStore.load()
-  } else {
-    await docsStore.load()
   }
+  // 重置所有依赖项目的状态
+  docsStore.selectDoc(null)
+  graphStore.selectedNode = null
+  await Promise.all([
+    docsStore.load(),
+    graphStore.loadGraph(),
+    ideaStore.load(),
+  ]).catch(() => {})
 }
 
 // ===== 文件导入辅助 =====
 function getFileType(name) {
-  const ext = name.split('.').pop()?.toLowerCase()
+  const parts = name.split('.')
+  if (parts.length < 2) return 'txt' // 无扩展名文件
+  const ext = parts.pop().toLowerCase()
   const typeMap = {
     pdf: 'pdf', doc: 'doc', docx: 'docx',
     md: 'md', markdown: 'md', txt: 'txt',
@@ -251,14 +273,17 @@ function getFileType(name) {
     ppt: 'ppt', pptx: 'pptx',
     jpg: 'jpg', jpeg: 'jpg', png: 'png',
   }
-  return typeMap[ext] || ext || 'txt'
+  return typeMap[ext] || 'txt'
 }
 
 function arrayBufferToBase64(buffer) {
-  let binary = ''
   const bytes = new Uint8Array(buffer)
   const len = bytes.byteLength
-  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i])
+  const CHUNK = 0x8000 // 32KB 分块处理，避免大文件时字符串拼接 O(n²)
+  let binary = ''
+  for (let i = 0; i < len; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CHUNK, len)))
+  }
   return btoa(binary)
 }
 
@@ -281,8 +306,14 @@ async function onImport() {
           const name = fp.split(/[\\/]/).pop()
           files.push({ name, content: arrayBufferToBase64(buffer), type: getFileType(name) })
         }
-        await docsStore.importFiles(files)
-        uiStore.toast(`已导入 ${files.length} 个文档`, 'success')
+        const results = await docsStore.importFiles(files)
+        const successCount = results.length
+        const failCount = files.length - successCount
+        if (failCount > 0) {
+          uiStore.toast(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'error')
+        } else {
+          uiStore.toast(`已导入 ${successCount} 个文档`, 'success')
+        }
       }
     } catch (e) {
       uiStore.toast('导入失败: ' + (e.message || e), 'error')
@@ -297,15 +328,27 @@ async function onImport() {
 async function handleFileInput(event) {
   const files = Array.from(event.target.files || [])
   if (files.length === 0) return
+  const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB，与 Electron 模式一致
   importing.value = true
   try {
     const fileObjs = []
     for (const f of files) {
+      if (f.size > MAX_FILE_SIZE) {
+        uiStore.toast(`文件「${f.name}」超过 50MB 限制，已跳过`, 'error')
+        continue
+      }
       const buffer = await f.arrayBuffer()
       fileObjs.push({ name: f.name, content: arrayBufferToBase64(buffer), type: getFileType(f.name) })
     }
-    await docsStore.importFiles(fileObjs)
-    uiStore.toast(`已导入 ${fileObjs.length} 个文档`, 'success')
+    if (fileObjs.length === 0) return
+    const results = await docsStore.importFiles(fileObjs)
+    const successCount = results.length
+    const failCount = fileObjs.length - successCount
+    if (failCount > 0) {
+      uiStore.toast(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'error')
+    } else {
+      uiStore.toast(`已导入 ${successCount} 个文档`, 'success')
+    }
   } catch (e) {
     uiStore.toast('导入失败: ' + (e.message || e), 'error')
   } finally {

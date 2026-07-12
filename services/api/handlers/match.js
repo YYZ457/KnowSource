@@ -7,13 +7,14 @@ import { embed } from '../../embedding-provider.js';
 import { getGraph } from './graph-query.js';
 
 export async function matchHandler({ query, strategy, weights, topN } = {}) {
-  if (!query) {
+  if (!query || !query.trim()) {
     return { success: false, error: '缺少搜索关键词', results: [] };
   }
 
-  // 从共享存储收集文档
-  const documents = Array.from(storage.documents.values()).map(d => ({
-    meta: { docId: d.docId },
+  // 从共享存储收集文档（添加 null 检查防止未初始化时崩溃）
+  const docMap = storage.documents || new Map();
+  const documents = Array.from(docMap.values()).map(d => ({
+    meta: { docId: d.docId, docName: d.name || d.docId, type: d.type },
     sections: d.sections,
     rawText: d.rawText
   }));
@@ -37,6 +38,6 @@ export async function matchHandler({ query, strategy, weights, topN } = {}) {
   return {
     query,
     strategy: strategy || 'hybrid',
-    results: typeof topN === 'number' ? results.slice(0, topN) : results
+    results: (typeof topN === 'number' && topN > 0) ? results.slice(0, Math.floor(topN)) : results
   };
 }

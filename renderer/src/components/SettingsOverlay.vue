@@ -39,9 +39,9 @@
 
           <!-- Content Area -->
           <div class="settings-content">
-            <ModelLab v-if="uiStore.settingsTab === 'model'" :embedded="true" />
-            <PromptLab v-else-if="uiStore.settingsTab === 'prompts'" :embedded="true" />
-            <div v-else-if="uiStore.settingsTab === 'about'" class="settings-about">
+            <ModelLab v-show="uiStore.settingsTab === 'model'" :embedded="true" />
+            <PromptLab v-show="uiStore.settingsTab === 'prompts'" :embedded="true" />
+            <div v-if="uiStore.settingsTab === 'about'" class="settings-about">
               <div class="about-card">
                 <div class="about-logo">
                   <svg viewBox="0 0 24 24" fill="none">
@@ -68,6 +68,10 @@
                   </div>
                 </div>
                 <p class="about-license">MIT License</p>
+                <button class="btn btn--sm about-replay-btn" @click="replayOnboarding">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9M3 12l3-3M3 12l3 3"/></svg>
+                  重新查看新手引导
+                </button>
               </div>
             </div>
           </div>
@@ -78,13 +82,20 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useUiStore, usePromptStore } from '../stores'
 import ModelLab from './ModelLab.vue'
 import PromptLab from './PromptLab.vue'
 
 const uiStore = useUiStore()
 const promptStore = usePromptStore()
+
+// 重新查看新手引导
+function replayOnboarding() {
+  uiStore.closeSettings()
+  // 通过全局事件触发 OnboardingTour 显示
+  window.dispatchEvent(new CustomEvent('ks-show-onboarding'))
+}
 
 const tabs = computed(() => [
   {
@@ -110,6 +121,28 @@ const tabs = computed(() => [
 function close() {
   uiStore.closeSettings()
 }
+
+// Escape 键关闭设置 + body 滚动锁定
+function onKeyDown(e) {
+  if (e.key === 'Escape' && uiStore.settingsOpen) {
+    close()
+  }
+}
+
+watch(() => uiStore.settingsOpen, (open) => {
+  if (open) {
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKeyDown)
+  } else {
+    document.body.style.overflow = ''
+    window.removeEventListener('keydown', onKeyDown)
+  }
+})
+
+onBeforeUnmount(() => {
+  document.body.style.overflow = ''
+  window.removeEventListener('keydown', onKeyDown)
+})
 </script>
 
 <style scoped>
@@ -303,6 +336,27 @@ function close() {
   font-size: 11px;
   color: var(--text-3);
   font-family: var(--font-mono);
+}
+
+.about-replay-btn {
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  border-radius: 8px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.about-replay-btn:hover {
+  background: rgba(6, 182, 212, 0.2);
+  border-color: rgba(6, 182, 212, 0.4);
+  transform: translateY(-1px);
 }
 
 /* ===== Transition ===== */

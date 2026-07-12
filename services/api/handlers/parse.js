@@ -69,6 +69,46 @@ export function getDocuments() {
   return Array.from(storage.documents.values());
 }
 
+/**
+ * 修复 PDF.js 文本提取中常见的 UTF-8 → Latin-1 误码（Mojibake）
+ *
+ * 当 PDF.js 从内嵌字体提取文本时，某些多字节 UTF-8 字符会被逐字节当作 Latin-1 字符返回。
+ * 例如中文"第"的 UTF-8 编码是 E7 AC AC，被拆成三个 Latin-1 字符 ç ¬ ¬。
+ * 间隔号"·"(U+00B7) 的 UTF-8 编码是 C2 B7，被拆成 Â ·。
+ *
+ * 策略：将字符串中 C1 控制字符和 Latin-1 补充字符（U+0080~U+00FF）按字节重新组合为 UTF-8。
+ * 仅在检测到明显的 Mojibake 模式时触发，避免误伤合法的 Latin-1 文本。
+ */
+function fixLatin1Mojibake(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  // 快速检测：是否包含大量 U+0080~U+00FF 范围的字符
+  // 正常英文论文几乎不包含这些字符；中文论文如果被误码则大量出现
+  const highByteCount = (text.match(/[\u0080-\u00FF]/g) || []).length;
+  if (highByteCount < 3) return text; // 少量可能是合法的 Latin-1 字符（如 é, ñ）
+
+  try {
+    // 将每个字符转换为字节：C0/C1 控制字符和 Latin-1 补充字符 (U+0080~U+00FF) 取其字节值
+    const bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) {
+      const code = text.charCodeAt(i);
+      bytes[i] = code & 0xFF;
+    }
+    // 将字节数组按 UTF-8 解码
+    const fixed = Buffer.from(bytes).toString('utf8');
+
+    // 验证：修复后的文本应该包含更少的替换字符（U+FFFD）和更少的 C1 控制字符
+    const fixedHighByteCount = (fixed.match(/[\u0080-\u00FF\uFFFD]/g) || []).length;
+    // 如果修复后高字节字符显著减少，则使用修复版本
+    if (fixedHighByteCount < highByteCount * 0.5) {
+      return fixed;
+    }
+    return text;
+  } catch {
+    return text;
+  }
+}
+
 export function deleteDocument({ id } = {}) {
   if (isProjectSwitching()) {
     throw new Error('项目正在切换中，请稍后再试');
@@ -234,6 +274,13 @@ export async function parseHandler({ name, content, type } = {}) {
         // 取消或异常时强制清理 OCR worker，避免僵尸进程
         try { await terminateOcrWorker(); } catch (_) {}
       }
+
+      // 修复 PDF.js 文本提取中常见的 UTF-8 → Latin-1 误码
+      // 现象：中文字符"第1页"变成"ç¬¬1é¡µ"，间隔号"·"变成"â"
+      // 原因：PDF.js 的 getTextContent 返回的字符串中某些字符的 UTF-8 字节
+      //       被逐字节当作 Latin-1 字符处理，导致多字节字符拆散
+      // 修复：检测是否为误码，将误码字节重新组合为正确的 UTF-8 字符
+      text = fixLatin1Mojibake(text);
     } catch (e) {
       if (e.code === 'CANCELLED') {
         throw new Error('PDF 解析已取消');

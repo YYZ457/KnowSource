@@ -39,15 +39,40 @@ async function request(path, options = {}) {
     ...options.headers
   }
 
-  const resp = await fetch(url, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  })
+  // 使用 AbortController 设置超时，防止 UI 永久卡死
+  const controller = new AbortController()
+  const timeoutMs = options.timeout || 30000 // 默认 30 秒；长操作可传更长的 timeout
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  let resp
+  try {
+    resp = await fetch(url, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    })
+  } catch (fetchErr) {
+    clearTimeout(timer)
+    if (fetchErr.name === 'AbortError') {
+      throw new Error(`请求超时（${timeoutMs / 1000}s）：${options.method || 'GET'} ${path}`)
+    }
+    throw fetchErr
+  }
+  clearTimeout(timer)
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
-    const err = new Error(`API ${resp.status}: ${text.slice(0, 200)}`)
+    // 尝试解析 JSON 获取友好错误消息
+    let message = `API ${resp.status}`
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed.error) message = parsed.error
+      else if (parsed.message) message = parsed.message
+    } catch {
+      if (text) message = text.slice(0, 200)
+    }
+    const err = new Error(message)
     err.status = resp.status
     err.body = text
     throw err
@@ -69,16 +94,17 @@ export const documentsApi = {
 
 // ===== 解析 API =====
 export const parseApi = {
-  parse: (file) => request('/parse', { method: 'POST', body: file }),
+  parse: (file) => request('/parse', { method: 'POST', body: file, timeout: 600000 }),
   pause: () => request('/parse/pause', { method: 'POST' }),
   resume: () => request('/parse/resume', { method: 'POST' }),
   cancel: () => request('/parse/cancel', { method: 'POST' }),
-  getProgress: () => request('/progress'),
+  getProgress: (docId) => request('/progress', { params: docId ? { docId } : {} }),
 }
 
 // ===== 图谱 API =====
 export const graphApi = {
-  build: (docIds, options = {}) => request('/graph/build', { method: 'POST', body: { docIds, options } }),
+  build: (docIds, options = {}) => request('/graph/build', { method: 'POST', body: { docIds, options }, timeout: 600000 }),
+  getProgress: () => request('/progress', { timeout: 5000 }),
   getStats: () => request('/graph/query', { params: { action: 'stats' } }),
   getNeighbors: (nodeId, depth = 1) => request('/graph/query', { params: { action: 'neighbors', nodeId, depth } }),
   findPath: (from, to) => request('/graph/query', { params: { action: 'path', from, to } }),
@@ -89,7 +115,7 @@ export const graphApi = {
   deleteNode: (id) => request('/graph/nodes/delete', { method: 'POST', body: { id } }),
   createEdge: (edge) => request('/graph/edges', { method: 'POST', body: edge }),
   updateEdge: (edge) => request('/graph/edges/update', { method: 'POST', body: edge }),
-  deleteEdge: (id) => request('/graph/edges/delete', { method: 'POST', body: { id } }),
+  deleteEdge: (from, to, type) => request('/graph/edges/delete', { method: 'POST', body: { from, to, type } }),
   getClearToken: () => request('/clear-token'),
   clearAll: async () => {
     const { token } = await request('/clear-token')
@@ -157,19 +183,37 @@ export async function testLLMConnection(config) {
     return { success: true, response: '[Stub 模式] 无需测试连接，将使用离线模拟响应。' }
   }
   if (!baseUrl) throw new Error('缺少 API Base URL')
+  // 校验 URL 格式，确保包含协议
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    throw new Error('Base URL 需以 http:// 或 https:// 开头')
+  }
   const url = String(baseUrl).replace(/\/+$/, '') + '/chat/completions'
   const headers = { 'Content-Type': 'application/json' }
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: '你好，请回复"连接成功"' }],
-      temperature: 0.1,
-      stream: false,
-    }),
-  })
+  // 设置 60 秒超时，防止 LLM 服务响应过慢导致 UI 永久卡死
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 60000)
+  let resp
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: '你好，请回复"连接成功"' }],
+        temperature: 0.1,
+        stream: false,
+      }),
+      signal: controller.signal
+    })
+  } catch (fetchErr) {
+    clearTimeout(timer)
+    if (fetchErr.name === 'AbortError') {
+      throw new Error('LLM 连接测试超时（60s），请检查网络或服务是否可用')
+    }
+    throw fetchErr
+  }
+  clearTimeout(timer)
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
     throw new Error(`LLM 请求失败 ${resp.status}: ${text.slice(0, 300)}`)

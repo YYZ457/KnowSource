@@ -15,17 +15,25 @@ const server = http.createServer((req, res) => {
   if (req.url && req.url.startsWith('/parse')) {
     req.setTimeout(30 * 60 * 1000); // 30 分钟
   }
-  handleHttpRequest(req, res);
+  // catch 未处理的异常，防止客户端 socket 悬挂
+  handleHttpRequest(req, res).catch((e) => {
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal Server Error', message: e.message }));
+    }
+  });
 });
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[知源] 后端服务已启动: http://127.0.0.1:${PORT}`);
 });
 
-// HTTP 服务器超时设置，避免慢速请求耗尽连接
-server.timeout = 300000;         // 5 分钟：整个请求的最大处理时间（/parse 路径已单独延长）
+// HTTP 服务器超时设置
+// 禁用 server.requestTimeout（它会覆盖 /parse 的 30 分钟超时），
+// 改用 server.timeout 和 req.setTimeout 分别控制
+server.timeout = 1800000;        // 30 分钟：整个请求的最大处理时间
 server.keepAliveTimeout = 5000;  // 5 秒：keep-alive 空闲超时
-server.requestTimeout = 300000;  // 5 分钟：请求头接收超时（增大以兼容大文件上传）
+server.requestTimeout = 0;       // 禁用：由 server.timeout 和 req.setTimeout 分别控制
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
@@ -35,6 +43,17 @@ server.on('error', (err) => {
     process.exit(1);
   }
   console.error('[知源] server error:', err.message);
+});
+
+// ============ 全局异常处理 ============
+// 防止未捕获的 Promise rejection 或异常导致进程无日志退出
+process.on('unhandledRejection', (reason) => {
+  console.error('[知源] 未处理的 Promise rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[知源] 未捕获的异常:', err);
+  gracefulShutdown('uncaughtException');
 });
 
 // ============ 优雅关闭 ============
@@ -47,6 +66,13 @@ async function gracefulShutdown(signal) {
   if (shuttingDown) return; // 防止重复触发
   shuttingDown = true;
   console.log(`\n[知源] 收到 ${signal} 信号，正在关闭后端服务...`);
+
+  // 强制退出定时器：如果 10 秒内未能优雅关闭，强制退出
+  const forceExitTimer = setTimeout(() => {
+    console.warn('[知源] 优雅关闭超时，强制退出');
+    process.exit(1);
+  }, 10000);
+  forceExitTimer.unref();
 
   // 1. 停止接受新连接，等待已有连接完成
   server.close(() => {
@@ -64,6 +90,7 @@ async function gracefulShutdown(signal) {
 
   // 3. 给持久化定时器一点时间完成最后的写入（storage.js 使用 100ms 防抖）
   setTimeout(() => {
+    clearTimeout(forceExitTimer);
     console.log('[知源] 后端服务已停止');
     process.exit(0);
   }, 200);

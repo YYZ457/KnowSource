@@ -126,7 +126,7 @@ export async function createNode({ type = 'concept', content, source = {}, meta 
   });
 }
 
-export async function updateNode({ id, content, source, meta, weight } = {}) {
+export async function updateNode({ id, content, type, source, meta, weight } = {}) {
   if (isProjectSwitching()) {
     return { success: false, error: '项目正在切换中，请稍后再试' };
   }
@@ -142,6 +142,7 @@ export async function updateNode({ id, content, source, meta, weight } = {}) {
 
     const node = { ...existing };
     if (content !== undefined) node.content = content.trim();
+    if (type !== undefined) node.type = type;
     if (source !== undefined) node.source = normalizeSource(source);
     if (weight !== undefined) node.weight = weight;
     if (meta !== undefined) {
@@ -172,6 +173,12 @@ export async function deleteNode({ id } = {}) {
     // 不可变更新：单次赋值完成读取-写入，避免竞态条件
     storage.graph.nodes = currentNodes.filter(n => n.id !== id);
     storage.graph.edges = currentEdges.filter(e => e.from !== id && e.to !== id);
+    // 清理 Idea 中的悬空引用，避免数据不一致
+    for (const idea of storage.ideas.values()) {
+      if (idea.relatedNodeIds && idea.relatedNodeIds.includes(id)) {
+        idea.relatedNodeIds = idea.relatedNodeIds.filter(nid => nid !== id);
+      }
+    }
     return { success: true, deletedId: id };
   });
 }
@@ -181,6 +188,7 @@ export async function createEdge({ from, to, type = 'manual', weight = 1, eviden
     return { success: false, error: '项目正在切换中，请稍后再试' };
   }
   if (!from || !to) return { success: false, error: '边的 from/to 不能为空' };
+  if (from === to) return { success: false, error: '不支持自环边（from 不能等于 to）' };
   if (!VALID_EDGE_TYPES.has(type)) {
     return { success: false, error: `无效的边类型: ${type}，有效类型为: ${Array.from(VALID_EDGE_TYPES).join(', ')}` };
   }
@@ -279,11 +287,12 @@ export async function updateEdge({ from, to, type, newType, weight, evidence } =
       return { success: false, error: '边不存在' };
     }
 
-    // 如果要修改 type，检查新 type 是否与已有边冲突（排除自身）
+    // 如果要修改 type，检查新 type 是否与已有边冲突（排除正在更新的边）
     if (newType !== undefined && newType !== type) {
+      const matchedSet = new Set(matched);
       const conflict = existing.some(e =>
         e.from === from && e.to === to && e.type === newType &&
-        !(type ? e.type === type : false)
+        !matchedSet.has(e)
       );
       if (conflict) {
         return { success: false, error: '更新后的边已存在（from/to/newType 重复）' };

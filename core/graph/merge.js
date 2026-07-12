@@ -14,8 +14,9 @@ export function mergeConcepts(graph, options = {}) {
   const aliasTable = options.aliasTable || new Map();
   const result = { mergedCount: 0, mergedPairs: [] };
 
-  // 收集所有 concept 节点
-  const concepts = Array.from(graph.nodes.values()).filter(n => n.type === 'concept');
+  // 修复：合并 concept 和 entity 类型节点（LLM 提取的实体类型为 entity）
+  // 但只合并同一文档内的 entity，跨文档 entity 保留独立以承接 cross-link 边
+  const concepts = Array.from(graph.nodes.values()).filter(n => n.type === 'concept' || n.type === 'entity');
 
   // 标记已合并的节点
   const merged = new Set();
@@ -34,14 +35,27 @@ export function mergeConcepts(graph, options = {}) {
       // 判断是否应合并：别名表命中 或 语义相似度超阈值
       let shouldMerge = aliases.includes(secondary.content);
       if (!shouldMerge) {
-        // 用 textSimilarity 做简单相似度（基于字符重叠）
-        const sim = textSimilarity(primary.content, secondary.content);
-        shouldMerge = sim >= threshold;
+        // 完全相同内容直接合并（优先判断，避免相似度计算误差）
+        if (primary.content === secondary.content) {
+          shouldMerge = true;
+        } else {
+          // 用 textSimilarity 做简单相似度（基于字符重叠）
+          const sim = textSimilarity(primary.content, secondary.content);
+          shouldMerge = sim >= threshold;
+        }
       }
-      // 完全相同内容直接合并
-      if (primary.content === secondary.content) shouldMerge = true;
 
       if (shouldMerge) {
+        // 修复：跨文档的 entity 不合并，保留独立节点以承接 cross-link 边
+        // concept 类型可以跨文档合并（概念本就跨文档通用）
+        if (primary.type === 'entity' && secondary.type === 'entity') {
+          const docA = primary.source?.docId || primary.source?.sectionId?.split('_')[0];
+          const docB = secondary.source?.docId || secondary.source?.sectionId?.split('_')[0];
+          if (docA && docB && docA !== docB) {
+            // 跨文档 entity 不合并，保留独立节点
+            continue;
+          }
+        }
         // 合并：primary 吸收 secondary
         primary.mergeAlias(secondary);
         // 迁移 secondary 的所有边到 primary
@@ -73,7 +87,8 @@ function migrateEdges(graph, fromId, toId) {
       to: edge.to === fromId ? toId : edge.to,
       type: edge.type,
       weight: edge.weight,
-      evidence: edge.evidence
+      evidence: edge.evidence,
+      source: edge.source // 保留来源溯源信息
     };
     // 避免自环
     if (newEdge.from !== newEdge.to) {

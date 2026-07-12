@@ -48,6 +48,7 @@
             <div class="panel__header">
               <h2>{{ taskName(activeTask) }}</h2>
               <div class="pl-header-actions">
+                <span v-if="isDirty" class="tag tag--rose">未保存</span>
                 <span v-if="hasOverride(activeTaskId)" class="tag tag--amber">自定义模板</span>
                 <span v-else class="tag tag--cyan">内置模板</span>
                 <button class="btn btn--sm" :disabled="!hasOverride(activeTaskId)" @click="onReset">恢复内置</button>
@@ -56,11 +57,11 @@
             <div class="panel__body">
               <div class="field">
                 <label>System Prompt（系统提示词）</label>
-                <textarea v-model="editSystem" rows="6" placeholder="定义模型的角色与行为约束..."></textarea>
+                <textarea v-model="editSystem" @input="markDirty" rows="6" placeholder="定义模型的角色与行为约束..."></textarea>
               </div>
               <div class="field">
                 <label>User Prompt（用户提示词）</label>
-                <textarea v-model="editUser" rows="6" :placeholder="userPromptPh"></textarea>
+                <textarea v-model="editUser" @input="markDirty" rows="6" :placeholder="userPromptPh"></textarea>
               </div>
 
               <!-- 变量徽章 -->
@@ -184,6 +185,9 @@ const taskFilter = ref('')
 const activeTaskId = ref(null)
 const editSystem = ref('')
 const editUser = ref('')
+// 快照：记录加载时的模板内容，用于检测未保存的更改
+const loadedSystem = ref('')
+const loadedUser = ref('')
 
 // 测试运行相关（提前声明，避免 watch immediate 调用 selectTask 时 TDZ 报错）
 const testing = ref(false)
@@ -217,13 +221,39 @@ function hasOverride(id) {
   return !!promptStore.overrides[id]
 }
 
+// 未保存标记：用户输入时设为 true，加载/保存/重置时清除
+const dirty = ref(false)
+function markDirty() { dirty.value = true }
+
+// 检查当前编辑是否与加载时不同（有未保存的更改）
+const isDirty = computed(() => dirty.value)
+
 function selectTask(t) {
+  // 切换到不同任务时，若有未保存的更改则提示确认
+  if (activeTaskId.value && activeTaskId.value !== t.id && isDirty.value) {
+    uiStore.showConfirm({
+      title: '未保存的更改',
+      message: '当前模板有未保存的更改，切换任务将丢失这些更改。确定切换吗？',
+      confirmText: '切换',
+      cancelText: '取消',
+      onConfirm: () => doSelectTask(t),
+    })
+    return
+  }
+  doSelectTask(t)
+}
+
+function doSelectTask(t) {
   activeTaskId.value = t.id
   const tpl = promptStore.getEffectiveTemplate(t.id)
   editSystem.value = tpl.system || ''
   editUser.value = tpl.user || ''
+  // 保存快照，用于后续 dirty 检测
+  loadedSystem.value = editSystem.value
+  loadedUser.value = editUser.value
   testResult.value = null
   testError.value = ''
+  dirty.value = false
 }
 
 function onRestoreEditor() {
@@ -231,6 +261,10 @@ function onRestoreEditor() {
   const tpl = promptStore.getEffectiveTemplate(activeTaskId.value)
   editSystem.value = tpl.system || ''
   editUser.value = tpl.user || ''
+  // 重置编辑后更新快照
+  loadedSystem.value = editSystem.value
+  loadedUser.value = editUser.value
+  dirty.value = false
 }
 
 // 自动选中第一个任务
@@ -270,6 +304,10 @@ async function onSave() {
       system: editSystem.value,
       user: editUser.value,
     })
+    // 保存成功后更新快照
+    loadedSystem.value = editSystem.value
+    loadedUser.value = editUser.value
+    dirty.value = false
     uiStore.toast('提示词模板已保存', 'success')
   } catch (e) {
     uiStore.toast('保存失败：' + e.message, 'error')
@@ -280,11 +318,28 @@ async function onSave() {
 
 async function onReset() {
   if (!activeTaskId.value) return
+  // 如果有未保存的编辑，先确认
+  if (isDirty.value) {
+    uiStore.showConfirm({
+      title: '未保存的更改',
+      message: '当前模板有未保存的修改，恢复内置将丢弃这些更改。是否继续？',
+      confirmText: '恢复内置',
+      onConfirm: () => doReset()
+    })
+    return
+  }
+  await doReset()
+}
+
+async function doReset() {
   try {
     await promptStore.resetOverride(activeTaskId.value)
     const tpl = promptStore.getEffectiveTemplate(activeTaskId.value)
     editSystem.value = tpl.system || ''
     editUser.value = tpl.user || ''
+    loadedSystem.value = editSystem.value
+    loadedUser.value = editUser.value
+    dirty.value = false
     uiStore.toast('已恢复内置模板', 'success')
   } catch (e) {
     uiStore.toast('恢复失败：' + e.message, 'error')
@@ -337,16 +392,30 @@ async function callLLM(system, user) {
     const url = String(cfg.baseUrl).replace(/\/+$/, '') + '/chat/completions'
     const headers = { 'Content-Type': 'application/json' }
     if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: cfg.model,
-        messages,
-        temperature: 0.3,
-        stream: false,
-      }),
-    })
+    // 设置 60 秒超时，防止 LLM 响应过慢导致 UI 永久卡死
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 60000)
+    let resp
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: cfg.model,
+          messages,
+          temperature: 0.3,
+          stream: false,
+        }),
+        signal: controller.signal,
+      })
+    } catch (fetchErr) {
+      clearTimeout(timeout)
+      if (fetchErr.name === 'AbortError') {
+        throw new Error('LLM 请求超时（60s），请检查网络或模型是否可用')
+      }
+      throw fetchErr
+    }
+    clearTimeout(timeout)
     if (!resp.ok) {
       const text = await resp.text().catch(() => '')
       throw new Error(`LLM 请求失败 ${resp.status}: ${text.slice(0, 300)}`)

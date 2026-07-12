@@ -60,14 +60,18 @@
           class="editor__pdf-viewer"
         >
           <iframe
-            v-if="pdfUrl"
+            v-if="pdfUrl && !pdfLoadFailed"
             :src="pdfUrl"
             class="editor__pdf-iframe"
             frameborder="0"
             allowfullscreen
           ></iframe>
           <div v-else class="editor__pdf-fallback">
-            <p>PDF 原始文件不可用，正在显示提取的文本</p>
+            <p>{{ pdfLoadFailed ? 'PDF 加载失败，可能是文件较大或格式异常' : 'PDF 原始文件不可用' }}</p>
+            <button class="btn btn--sm" @click="pdfViewMode = 'text'">切换到文本视图</button>
+            <button v-if="pdfLoadFailed" class="btn btn--sm btn--ghost" @click="retryPdfLoad">重试加载</button>
+            <pre v-if="rawContent" class="editor__plain editor__plain--fallback">{{ rawContent }}</pre>
+            <p v-else class="editor__empty--inline">该文档暂无提取文本</p>
           </div>
         </div>
 
@@ -91,8 +95,9 @@
 </template>
 
 <script setup>
-import { ref, shallowRef, computed, watch, onMounted } from 'vue'
+import { ref, shallowRef, computed, watch, onMounted, nextTick } from 'vue'
 import { useDocsStore } from '../stores'
+import DOMPurify from 'dompurify'
 
 const docsStore = useDocsStore()
 
@@ -160,6 +165,50 @@ const pdfUrl = computed(() => {
   return `/api/documents/${encodeURIComponent(docId)}/pdf`
 })
 
+// PDF 加载失败处理
+const pdfLoadFailed = ref(false)
+const pdfRetryKey = ref(0) // 用于触发重试
+
+// 预检 PDF 可达性，失败则回退到文本视图
+async function checkPdfAccessible(docId) {
+  if (!docId) return false
+  try {
+    const isElectron = typeof window !== 'undefined' && window.KSElectron
+    let checkUrl
+    if (isElectron && window.KSElectron?.env?.backendPort) {
+      const port = window.KSElectron.env.backendPort
+      const token = window.KSElectron.env.apiToken || ''
+      checkUrl = `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
+    } else {
+      checkUrl = `/api/documents/${encodeURIComponent(docId)}/pdf`
+    }
+    const resp = await fetch(checkUrl, { method: 'HEAD', signal: AbortSignal.timeout(5000) })
+    if (resp.ok || resp.status === 206) return true
+    // 403/404 等视为不可用
+    console.warn('[Editor] PDF 预检失败:', resp.status)
+    return false
+  } catch (e) {
+    console.warn('[Editor] PDF 预检异常:', e.message)
+    return false
+  }
+}
+
+function retryPdfLoad() {
+  pdfLoadFailed.value = false
+  pdfRetryKey.value++
+}
+
+// 选中文档变化时预检 PDF
+watch([() => docsStore.selectedDocId, () => pdfViewMode.value, pdfRetryKey], async ([docId, mode]) => {
+  if (docId && mode === 'render' && isPdf.value) {
+    pdfLoadFailed.value = false
+    const ok = await checkPdfAccessible(docId)
+    if (!ok) {
+      pdfLoadFailed.value = true
+    }
+  }
+}, { immediate: true })
+
 // 本地跟踪内容加载状态(store 内部异步获取内容,无独立标志位)
 // 切换文档时置为 true,内容到达后置为 false
 const contentLoading = ref(false)
@@ -167,7 +216,8 @@ const contentLoading = ref(false)
 const renderedHtml = computed(() => {
   if (!md.value || !hasContent.value) return ''
   try {
-    return md.value.render(rawContent.value)
+    const raw = md.value.render(rawContent.value)
+    return DOMPurify.sanitize(raw, { ADD_ATTR: ['target'] })
   } catch (e) {
     return ''
   }
@@ -207,16 +257,19 @@ const docSize = computed(() => {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 })
 
-// 选中文档切换时滚动到顶部,并标记内容加载中
+// 选中文档切换时滚动到顶部,重置PDF视图模式,并标记内容加载中
 watch(() => docsStore.selectedDocId, (id) => {
   const el = document.querySelector('.editor__content')
   if (el) el.scrollTop = 0
-  if (id) contentLoading.value = true
-})
-
-// 内容到达后清除加载状态
-watch(() => docsStore.selectedDocContent, () => {
-  contentLoading.value = false
+  // 切换文档时重置PDF视图模式为默认渲染模式
+  pdfViewMode.value = 'render'
+  if (id) {
+    contentLoading.value = true
+    // 使用 nextTick 确保 contentLoading 不会因 selectedDocContent 未变化而卡住
+    nextTick(() => {
+      contentLoading.value = false
+    })
+  }
 })
 </script>
 

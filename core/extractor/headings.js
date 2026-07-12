@@ -451,6 +451,7 @@ function parseHeading(line, type, options = {}) {
 
   if (type === 'bookmark') {
     const m = trimmed.match(HEADING_PATTERNS.bookmark);
+    if (!m) return null;
     const level = parseInt(m[1], 10);
     const title = cleanTitle(m[2]);
     return { level, title, raw: trimmed };
@@ -458,6 +459,7 @@ function parseHeading(line, type, options = {}) {
 
   if (type === 'markdown') {
     const m = trimmed.match(HEADING_PATTERNS.markdown);
+    if (!m) return null;
     const level = m[1].length;
     const title = cleanTitle(m[2]);
     return { level, title, raw: trimmed };
@@ -475,6 +477,7 @@ function parseHeading(line, type, options = {}) {
 
   if (type === 'section') {
     const m = trimmed.match(HEADING_PATTERNS.section);
+    if (!m) return null;
     const nums = m[1].split('.');
     // 1 -> level 1, 1.2 -> level 2, 1.2.3 -> level 3
     const level = Math.min(4, Math.max(1, nums.length));
@@ -494,12 +497,14 @@ function parseHeading(line, type, options = {}) {
 
   if (type === 'bold') {
     const m = trimmed.match(HEADING_PATTERNS.bold);
+    if (!m) return null;
     const title = cleanTitle(m[1]);
     return { level: 3, title, raw: trimmed };
   }
 
   if (type === 'fontSize') {
     const m = trimmed.match(HEADING_PATTERNS.fontSize);
+    if (!m) return null;
     const fontSize = parseFloat(m[1]);
     let inner = m[2].trim();
     // 优先尝试用标题文本匹配章节/节编号，获得更准确的层级
@@ -540,6 +545,7 @@ function parseHeading(line, type, options = {}) {
 
   if (type === 'alphaRoman') {
     const m = trimmed.match(HEADING_PATTERNS.alphaRoman);
+    if (!m) return null;
     const prefix = m[1];
     // 罗马数字 I/II/III 通常级别更高
     const isRoman = /^[IVXivx]+$/.test(prefix);

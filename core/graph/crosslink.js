@@ -432,7 +432,10 @@ export async function buildCrossLinksLLM(graph, options = {}) {
   const { pairs, docPairs } = generateCrossDocPairs(graph, {
     ...options,
     nodeTypes: options.nodeTypes || ['heading', 'entity'],
-    maxPairs: options.maxPairs || 400
+    maxPairs: options.maxPairs || 400,
+    // 修复：LLM 路径不做词法预筛，把语义判断权交给 LLM
+    // 原代码用词法相似度阈值过滤候选对，导致词法不同但语义相关的跨文档对永远到不了 LLM
+    threshold: 0.0
   });
 
   if (pairs.length === 0) return result;
