@@ -272,11 +272,18 @@ function createWindow() {
   });
 
   // CSP：通过响应头直接设置，比 dom-ready 注入 meta 更可靠，确保覆盖 file:// 协议加载的页面。
+  // 注意：对 PDF 响应不设置 CSP，避免干扰 Chromium 内置 PDF 查看器（PDFium 需加载内部资源）。
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders || {};
     delete headers['Content-Security-Policy'];
     delete headers['content-security-policy'];
-    headers['Content-Security-Policy'] = [buildCsp()];
+    // PDF 响应不添加 CSP，避免 object-src 'none' 等限制阻止 PDFium 渲染
+    const contentTypeRaw = headers['Content-Type'] || headers['content-type'] || '';
+    const contentType = Array.isArray(contentTypeRaw) ? contentTypeRaw.join(';') : String(contentTypeRaw);
+    const isPdfResponse = contentType.includes('application/pdf') || (details.url && details.url.includes('/pdf'));
+    if (!isPdfResponse) {
+      headers['Content-Security-Policy'] = [buildCsp()];
+    }
     callback({ responseHeaders: headers });
   });
 

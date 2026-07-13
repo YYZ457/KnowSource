@@ -82,6 +82,18 @@
 
     <!-- ===== Main Content — 统一两栏布局 ===== -->
     <main class="main-content">
+      <!-- Source Preview Panel: 图谱视图双击节点时丝滑展开 -->
+      <div
+        class="source-preview-panel"
+        :class="{ 'source-preview-panel--resizing': isResizing }"
+        :style="{ width: sourcePreviewVisible ? sourcePreviewWidth + 'px' : '0px' }"
+      >
+        <div v-show="sourcePreviewVisible" class="source-preview-inner" :style="{ width: sourcePreviewWidth + 'px' }">
+          <SourcePreview />
+        </div>
+        <div v-if="sourcePreviewVisible" class="source-preview-resizer" @mousedown="startResize"></div>
+      </div>
+
       <Splitpanes class="default-theme" @resize="onResize">
         <!-- Left Pane: 上下文侧边栏（随视图切换内容） -->
         <Pane :size="leftPaneSize" :min-size="leftPaneSize === 0 ? 0 : 15" :max-size="45">
@@ -132,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
 import { useUiStore, useDocsStore, useGraphStore, usePromptStore, useModelStore, useIdeaStore, useProjectStore } from './stores'
@@ -145,6 +157,7 @@ import IdeaPanel from './components/IdeaPanel.vue'
 import SearchPanel from './components/SearchPanel.vue'
 import SettingsOverlay from './components/SettingsOverlay.vue'
 import OnboardingTour from './components/OnboardingTour.vue'
+import SourcePreview from './components/SourcePreview.vue'
 
 const uiStore = useUiStore()
 const onboardingRef = ref(null)
@@ -166,6 +179,35 @@ const healthState = ref('checking')
 const healthMessage = ref('')
 const healthRetrying = ref(false)
 let healthTimer = null
+
+// ===== Source Preview Panel (图谱视图双击节点时展开) =====
+const sourcePreviewVisible = computed(() => !!uiStore.sourcePreviewDocId)
+const sourcePreviewWidth = ref(400)
+const isResizing = ref(false)
+
+function startResize(e) {
+  e.preventDefault()
+  isResizing.value = true
+  const startX = e.clientX
+  const startWidth = sourcePreviewWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMove = (ev) => {
+    if (!isResizing.value) return
+    const delta = ev.clientX - startX
+    sourcePreviewWidth.value = Math.max(220, Math.min(500, startWidth + delta))
+  }
+  const onUp = () => {
+    isResizing.value = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
 
 function onResize(event) {
   if (event[0]) leftPaneSize.value = event[0].size
@@ -286,12 +328,12 @@ function setupMenuListeners() {
         const name = filePath.split(/[\\/]/).pop()
         const content = arrayBufferToBase64(buffer)
         const type = getFileType(name)
-        const results = await docsStore.importFiles([{ name, content, type }])
+        const { results, errors } = await docsStore.importFiles([{ name, content, type }])
         const successCount = results.length
         if (successCount > 0) {
           uiStore.toast(`已导入: ${name}`, 'success')
         } else {
-          uiStore.toast(`导入失败: ${name}`, 'error')
+          uiStore.toast(`导入失败: ${name}\n${errors.join('\n')}`, 'error')
         }
       } catch (e) { uiStore.toast('导入失败: ' + e.message, 'error') }
     }))
@@ -466,8 +508,39 @@ watch(() => uiStore.confirmDialog, (dialog) => {
 .pane-content { height: 100%; overflow-y: auto; padding: 8px; background: var(--bg-void, #0a0e1a); }
 .pane-center { display: flex; flex-direction: column; padding: 8px; }
 
+/* Source Preview Panel: 丝滑展开的源文件预览面板 */
+.source-preview-panel {
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  background: var(--bg-card, #131826);
+  border-right: 1px solid var(--border, rgba(255,255,255,0.06));
+}
+.source-preview-panel--resizing {
+  transition: none;
+}
+.source-preview-inner {
+  height: 100%;
+  overflow: hidden;
+}
+.source-preview-resizer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 10;
+  transition: background 0.15s;
+}
+.source-preview-resizer:hover {
+  background: var(--accent, #06b6d4);
+}
+
 /* 覆盖 Splitpanes default-theme 的浅色背景 */
-:deep(.splitpanes.default-theme) { background: var(--bg-void, #0a0e1a); }
+:deep(.splitpanes.default-theme) { background: var(--bg-void, #0a0e1a); flex: 1; min-width: 0; }
 :deep(.splitpanes.default-theme .splitpanes__pane) {
   background: var(--bg-void, #0a0e1a);
   box-shadow: none;

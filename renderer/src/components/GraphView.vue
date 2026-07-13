@@ -732,7 +732,10 @@ function buildGraph() {
       // 取消单击的展开/收起定时器
       if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
       const docId = d.source?.docId || d.meta?.docId || d.docId
-      if (docId) { uiStore.setView('documents'); docsStore.selectDoc(docId) }
+      if (docId) {
+        const nodeLabel = d.content || d.label || d.name || ''
+        uiStore.openSourcePreview(docId, nodeLabel)
+      }
     })
     .on('contextmenu', (event, d) => {
       event.preventDefault(); event.stopPropagation()
@@ -882,7 +885,10 @@ function updateGraphVisibility() {
       // 取消单击的展开/收起定时器
       if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
       const docId = d.source?.docId || d.meta?.docId || d.docId
-      if (docId) { uiStore.setView('documents'); docsStore.selectDoc(docId) }
+      if (docId) {
+        const nodeLabel = d.content || d.label || d.name || ''
+        uiStore.openSourcePreview(docId, nodeLabel)
+      }
     })
     .on('contextmenu', (event, d) => {
       event.preventDefault(); event.stopPropagation()

@@ -349,6 +349,13 @@ async function parsePDF(file, onProgress, options = {}) {
       docOptions.cMapUrl = cMapUrl.replace(/\\/g, '/') + '/';
       docOptions.cMapPacked = true;
     }
+    // 标准字体目录：打包后在 resources/standard_fonts
+    if (process.resourcesPath) {
+      const sfDir = path.join(process.resourcesPath, 'standard_fonts');
+      if (fs.existsSync(sfDir)) {
+        docOptions.standardFontDataUrl = sfDir.replace(/\\/g, '/') + '/';
+      }
+    }
     pdf = await withTimeout(pdfjsLib.getDocument(docOptions).promise, 30000, 'PDF load');
     // 释放 arrayBuffer 引用，让 GC 回收大块内存
     arrayBuffer = null;

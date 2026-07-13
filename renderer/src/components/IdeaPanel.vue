@@ -126,7 +126,10 @@ function isSelected(idea) {
 
 function cloneIdea(idea) {
   if (!idea) return null
-  if (typeof structuredClone === 'function') return structuredClone(idea)
+  // Pinia exposes list entries as Vue reactive proxies. Passing a proxy
+  // directly to structuredClone throws DataCloneError in Chromium, which
+  // made clicking an existing idea silently fail before the editor opened.
+  // JSON cloning also matches the plain-data shape returned by the API.
   return JSON.parse(JSON.stringify(idea))
 }
 

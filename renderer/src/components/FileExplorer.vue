@@ -347,11 +347,12 @@ async function onImport() {
           const name = fp.split(/[\\/]/).pop()
           files.push({ name, content: arrayBufferToBase64(buffer), type: getFileType(name) })
         }
-        const results = await docsStore.importFiles(files)
+        uiStore.toast(`正在解析 ${files.length} 个文档，请稍候...`, 'info')
+        const { results, errors } = await docsStore.importFiles(files)
         const successCount = results.length
         const failCount = files.length - successCount
         if (failCount > 0) {
-          uiStore.toast(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'error')
+          uiStore.toast(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个\n${errors.join('\n')}`, 'error')
         } else {
           uiStore.toast(`已导入 ${successCount} 个文档`, 'success')
         }
@@ -369,12 +370,14 @@ async function onImport() {
 async function importSample() {
   if (sampleImporting.value) return
   sampleImporting.value = true
+  uiStore.toast('正在导入示例文档，首次解析可能需要几分钟...', 'info')
   try {
     const result = await documentsApi.importSample()
     if (result?.success === false && !result?.skipped) throw new Error(result.error || '示例导入失败')
     await docsStore.load()
     if (!docsStore.selectedDocId && docsStore.documents[0]?.id) docsStore.selectDoc(docsStore.documents[0].id)
-    uiStore.toast(result?.skipped ? '示例文档已存在' : '示例文档已载入', 'success')
+    const allSkipped = result?.docs?.length > 0 && result.docs.every(d => d.skipped)
+    uiStore.toast(allSkipped ? '示例文档已存在' : '示例文档已载入', 'success')
   } catch (e) {
     uiStore.toast('载入示例失败：' + (e.message || e), 'error')
   } finally {
@@ -398,11 +401,12 @@ async function handleFileInput(event) {
       fileObjs.push({ name: f.name, content: arrayBufferToBase64(buffer), type: getFileType(f.name) })
     }
     if (fileObjs.length === 0) return
-    const results = await docsStore.importFiles(fileObjs)
+    uiStore.toast(`正在解析 ${fileObjs.length} 个文档，请稍候...`, 'info')
+    const { results, errors } = await docsStore.importFiles(fileObjs)
     const successCount = results.length
     const failCount = fileObjs.length - successCount
     if (failCount > 0) {
-      uiStore.toast(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'error')
+      uiStore.toast(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个\n${errors.join('\n')}`, 'error')
     } else {
       uiStore.toast(`已导入 ${successCount} 个文档`, 'success')
     }

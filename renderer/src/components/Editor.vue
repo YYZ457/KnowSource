@@ -73,13 +73,20 @@
           v-else-if="isPdf && pdfViewMode === 'render'"
           class="editor__pdf-viewer"
         >
-          <iframe
-            v-if="pdfUrl && !pdfLoadFailed"
-            :src="pdfUrl"
-            class="editor__pdf-iframe"
-            frameborder="0"
-            allowfullscreen
-          ></iframe>
+          <div v-if="pdfUrl && !pdfLoadFailed" class="editor__pdf-iframe-wrapper">
+            <iframe
+              :src="pdfUrl"
+              class="editor__pdf-iframe"
+              frameborder="0"
+              allowfullscreen
+              @load="onPdfIframeLoad"
+              @error="onPdfIframeError"
+            ></iframe>
+            <div v-if="pdfLoading" class="editor__pdf-loading">
+              <span class="spinner"></span>
+              <span>正在加载 PDF...</span>
+            </div>
+          </div>
           <div v-else class="editor__pdf-fallback">
             <p>{{ pdfLoadFailed ? 'PDF 加载失败，可能是文件较大或格式异常' : 'PDF 原始文件不可用' }}</p>
             <button class="btn btn--sm" @click="pdfViewMode = 'text'">切换到文本视图</button>
@@ -133,12 +140,14 @@ function openFirstDocument() {
 async function importSample() {
   if (importingSample.value) return
   importingSample.value = true
+  uiStore.toast('正在导入示例文档，首次解析可能需要几分钟...', 'info')
   try {
     const result = await documentsApi.importSample()
     if (result?.success === false && !result?.skipped) throw new Error(result.error || '示例导入失败')
     await docsStore.load()
     if (!docsStore.selectedDocId && docsStore.documents[0]?.id) docsStore.selectDoc(docsStore.documents[0].id)
-    uiStore.toast(result?.skipped ? '示例文档已在资料库中' : '示例文档已准备好', 'success')
+    const allSkipped = result?.docs?.length > 0 && result.docs.every(d => d.skipped)
+    uiStore.toast(allSkipped ? '示例文档已存在' : '示例文档已载入', 'success')
   } catch (e) {
     uiStore.toast('载入示例失败：' + (e.message || e), 'error')
   } finally {
@@ -209,6 +218,7 @@ const pdfUrl = computed(() => {
 
 // PDF 加载失败处理
 const pdfLoadFailed = ref(false)
+const pdfLoading = ref(false)
 const pdfRetryKey = ref(0) // 用于触发重试
 
 // 预检 PDF 可达性，失败则回退到文本视图
@@ -264,6 +274,24 @@ function retryPdfLoad() {
   pdfRetryKey.value++
 }
 
+// iframe 加载事件处理
+let pdfLoadTimeoutId = null
+function onPdfIframeLoad() {
+  pdfLoading.value = false
+  if (pdfLoadTimeoutId) {
+    clearTimeout(pdfLoadTimeoutId)
+    pdfLoadTimeoutId = null
+  }
+}
+function onPdfIframeError() {
+  pdfLoading.value = false
+  pdfLoadFailed.value = true
+  if (pdfLoadTimeoutId) {
+    clearTimeout(pdfLoadTimeoutId)
+    pdfLoadTimeoutId = null
+  }
+}
+
 // 选中文档变化时预检 PDF（使用版本号防止竞态条件）
 let pdfCheckVersion = 0
 watch([() => docsStore.selectedDocId, () => pdfViewMode.value, pdfRetryKey], async ([docId, mode]) => {
@@ -272,11 +300,31 @@ watch([() => docsStore.selectedDocId, () => pdfViewMode.value, pdfRetryKey], asy
   if (docExists && mode === 'render' && isPdf.value) {
     const myVersion = ++pdfCheckVersion
     pdfLoadFailed.value = false
+    pdfLoading.value = true
+    // 设置超时：如果 15 秒内 iframe 没有触发 load 事件，标记为失败
+    if (pdfLoadTimeoutId) clearTimeout(pdfLoadTimeoutId)
+    pdfLoadTimeoutId = setTimeout(() => {
+      if (pdfLoading.value) {
+        pdfLoading.value = false
+        pdfLoadFailed.value = true
+      }
+    }, 15000)
     const ok = await checkPdfAccessible(docId)
     // 如果在等待期间用户又切换了文档，丢弃过期的检查结果
     if (myVersion !== pdfCheckVersion) return
     if (!ok) {
       pdfLoadFailed.value = true
+      pdfLoading.value = false
+      if (pdfLoadTimeoutId) {
+        clearTimeout(pdfLoadTimeoutId)
+        pdfLoadTimeoutId = null
+      }
+    }
+  } else {
+    pdfLoading.value = false
+    if (pdfLoadTimeoutId) {
+      clearTimeout(pdfLoadTimeoutId)
+      pdfLoadTimeoutId = null
     }
   }
 }, { immediate: true })
@@ -288,12 +336,79 @@ const contentLoading = ref(false)
 const renderedHtml = computed(() => {
   if (!md.value || !hasContent.value) return ''
   try {
-    const raw = md.value.render(rawContent.value)
+    // 对 PDF 提取文本进行预处理：清理标记、重组段落
+    let text = rawContent.value
+    if (isPdf.value) {
+      text = preprocessPdfText(text)
+    }
+    const raw = md.value.render(text)
     return DOMPurify.sanitize(raw, { ADD_ATTR: ['target'] })
   } catch (e) {
     return ''
   }
 })
+
+// PDF 文本预处理：清理标记、重组段落、美化分页符
+function preprocessPdfText(text) {
+  if (!text) return ''
+  let lines = text.split('\n')
+  const result = []
+  let paraBuffer = []
+
+  function flushPara() {
+    if (paraBuffer.length > 0) {
+      result.push(paraBuffer.join(''))
+      paraBuffer = []
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]
+    // 去除 [fsXX] 字体大小标记
+    line = line.replace(/\[fs\d+\]/g, '')
+    // 去除行首行尾多余空白
+    line = line.trim()
+    if (!line) {
+      flushPara()
+      continue
+    }
+    // 页码分隔线：--- 第X页 --- → 转为 markdown 分隔线 + 页码标注
+    const pageMatch = line.match(/^[-—]+\s*第\s*(\d+)\s*页\s*[-—]+$/)
+    if (pageMatch) {
+      flushPara()
+      result.push(`\n\n---\n\n<span class="pdf-page-marker">— 第 ${pageMatch[1]} 页 —</span>\n\n`)
+      continue
+    }
+    // 表格行（含 | 分隔）
+    if (line.includes('|') && line.split('|').length >= 3) {
+      flushPara()
+      result.push(line)
+      continue
+    }
+    // 判断是否为段落结束（以句末标点结尾）
+    const endsWithSentence = /[。．！？!?"」』）)；;]$/.test(line)
+    // 判断是否为标题行：含中文且长度适中，不以标点结尾，不是公式/数字行
+    const hasChinese = /[\u4e00-\u9fff]/.test(line)
+    const hasFormulaChars = /^[∑⎛⎜⎝⎞⎟⎠∑√−+×÷=<>≤≥≠≈∞αβγδεθλμπσφωΔΣΠNdxyzk=0-9\s.,;:(){}[\]|/−+*^]+$/.test(line)
+    const isNumericOrSymbol = /^[0-9\s.,;:(){}[\]|/−+*^=<>≤≥√∑⎛⎜⎝⎞⎟⎠TPN\s]+$/.test(line)
+    const isShortTitle = hasChinese && !hasFormulaChars && !isNumericOrSymbol && line.length <= 50 && !endsWithSentence && !line.match(/^[（(]/)
+    
+    if (endsWithSentence) {
+      // 以句末标点结尾，视为段落结束
+      paraBuffer.push(line)
+      flushPara()
+    } else if (isShortTitle && paraBuffer.length === 0) {
+      // 短行作为标题
+      flushPara()
+      result.push(`### ${line}`)
+    } else {
+      // 段落延续行，合并到缓冲区
+      paraBuffer.push(line)
+    }
+  }
+  flushPara()
+  return result.join('\n')
+}
 
 // 文件类型信息
 const TYPE_META = {
@@ -612,6 +727,19 @@ watch(() => docsStore.selectedDocId, (id) => {
   margin: 1.8em 0;
 }
 
+.markdown-body :deep(.pdf-page-marker) {
+  display: block;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  background: var(--bg-deep);
+  padding: 4px 0;
+  border-radius: var(--radius-sm);
+  margin: 1.2em 0;
+  letter-spacing: 0.1em;
+}
+
 .markdown-body :deep(img) {
   max-width: 100%;
   border-radius: var(--radius-sm);
@@ -625,6 +753,12 @@ watch(() => docsStore.selectedDocId, (id) => {
   display: flex;
   flex-direction: column;
 }
+.editor__pdf-iframe-wrapper {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  display: flex;
+}
 .editor__pdf-iframe {
   width: 100%;
   flex: 1;
@@ -633,13 +767,38 @@ watch(() => docsStore.selectedDocId, (id) => {
   background: white;
   min-height: 600px;
 }
-.editor__pdf-fallback {
+.editor__pdf-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 13px;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.editor__pdf-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  padding: 40px 20px;
+  gap: 8px;
+  padding: 60px 20px;
   color: var(--text-3);
   font-size: 13px;
+}
+.editor__pdf-fallback .editor__plain {
+  max-height: 400px;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 800px;
 }
 
 /* ===== 视图切换按钮 ===== */

@@ -102,7 +102,7 @@ async function request(path, options = {}) {
 // ===== 文档 API =====
 export const documentsApi = {
   list: () => request('/documents'),
-  importSample: () => request('/documents/import-sample', { method: 'POST', body: {} }),
+  importSample: () => request('/documents/import-sample', { method: 'POST', body: {}, timeout: 600000 }),
   remove: (id) => request('/documents/delete', { method: 'POST', body: { id } }),
   reorder: (docIds) => request('/documents/reorder', { method: 'POST', body: { docIds } }),
 }

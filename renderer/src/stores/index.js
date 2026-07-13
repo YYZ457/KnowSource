@@ -7,7 +7,7 @@ export const useUiStore = defineStore('ui', () => {
   const activeView = ref('documents') // documents | graph | idea
   const leftPanelVisible = ref(true)
   const rightPanelVisible = ref(false)
-  const theme = ref(localStorage.getItem('ks-theme') || 'dark')
+  const theme = ref(localStorage.getItem('ks-theme') || 'light')
   const searchQuery = ref('')
   const searchResults = ref([])
   const searchOpen = ref(false)
@@ -19,11 +19,30 @@ export const useUiStore = defineStore('ui', () => {
   const settingsOpen = ref(false)
   const settingsTab = ref('model') // model | prompts | about
 
+  // 源文件预览：图谱视图中双击节点时，在左侧展开源文件内容面板
+  const sourcePreviewDocId = ref(null)
+  const sourcePreviewNodeLabel = ref(null)
+
+  function openSourcePreview(docId, nodeLabel = null) {
+    sourcePreviewDocId.value = docId
+    sourcePreviewNodeLabel.value = nodeLabel
+  }
+
+  function closeSourcePreview() {
+    sourcePreviewDocId.value = null
+    sourcePreviewNodeLabel.value = null
+  }
+
   function setView(view) {
     activeView.value = view
     // 统一两栏布局：始终显示左侧面板
     leftPanelVisible.value = true
     rightPanelVisible.value = false
+    // 离开图谱视图时关闭源文件预览
+    if (view !== 'graph') {
+      sourcePreviewDocId.value = null
+      sourcePreviewNodeLabel.value = null
+    }
   }
 
   function openSettings(tab = 'model') {
@@ -61,7 +80,7 @@ export const useUiStore = defineStore('ui', () => {
   const graphCommand = ref(null) // { action: 'zoomIn' | 'zoomOut' | 'reset', ts: number }
   function sendGraphCommand(action) { graphCommand.value = { action, ts: Date.now() } }
 
-  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, setView, openSettings, closeSettings, toggleTheme, toast, dismissToast, showConfirm, closeConfirm, graphCommand, sendGraphCommand }
+  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, sourcePreviewDocId, sourcePreviewNodeLabel, setView, openSettings, closeSettings, toggleTheme, toast, dismissToast, showConfirm, closeConfirm, graphCommand, sendGraphCommand, openSourcePreview, closeSourcePreview }
 })
 
 // ===== Documents Store =====
@@ -119,8 +138,10 @@ export const useDocsStore = defineStore('docs', () => {
   }
 
   // 批量导入文件：files 为 { name, content, type } 对象数组
+  // 返回 { results, errors } — results 为成功列表，errors 为失败文件名+原因
   async function importFiles(files) {
     const results = []
+    const errors = []
     for (const f of files) {
       try {
         const result = await parseApi.parse(f)
@@ -128,12 +149,17 @@ export const useDocsStore = defineStore('docs', () => {
         if (result && !result.error) {
           results.push(result)
         } else {
-          console.error(`Parse returned error for ${f.name}:`, result?.error)
+          const errMsg = result?.error || '解析失败'
+          console.error(`Parse returned error for ${f.name}:`, errMsg)
+          errors.push(`${f.name}: ${errMsg}`)
         }
-      } catch (e) { console.error(`Parse failed for ${f.name}:`, e) }
+      } catch (e) {
+        console.error(`Parse failed for ${f.name}:`, e)
+        errors.push(`${f.name}: ${e.message || e}`)
+      }
     }
     await load()
-    return results
+    return { results, errors }
   }
 
   async function removeDoc(id) {

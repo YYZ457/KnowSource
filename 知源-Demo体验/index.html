@@ -1,1073 +1,728 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="知源 KnowSource 离线知识图谱交互体验：展开跨文档关系并回到原文证据。">
-<meta name="theme-color" content="#0c1927">
-<title>知源 KnowSource - 学术论文知识图谱可视化</title>
-<script src="d3.bundle.min.js"></script>
-<style>
-/* Warm paper × ink × teal — aligned with the desktop product */
-:root{
-  --paper:#f7f2e8;--paper-2:#efe7d9;--surface:#fffdf8;--ink:#0c1927;
-  --text:#263746;--muted:#73808a;--line:#ddd4c5;--teal:#118779;--teal-2:#22a699;
-  --teal-soft:#dceee9;--amber:#c47b18;
-}
-*{margin:0;padding:0;box-sizing:border-box;}
-html,body{width:100%;height:100%;overflow:hidden;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--paper);color:var(--text);}
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a0e1a">
+  <meta name="description" content="知源 KnowSource 桌面端交互体验">
+  <title>知源 KnowSource · 产品体验</title>
+  <script src="d3.bundle.min.js"></script>
+  <script>
+/* 三篇固定文献的人工校准知识图谱：去除 Stub/OCR 噪声，仅保留高质量结构与语义关系 */
+window.GRAPH_DATA={"docs":{"doc-b2613a49":{"id":"doc-b2613a49","name":"深度学习研究综述（尹宝才）.pdf","pages":12,"type":"pdf","isScanned":false,"size":4433665},"doc-fe466a6d":{"id":"doc-fe466a6d","name":"卷积神经网络研究综述（李彦冬）.pdf","pages":9,"type":"pdf","isScanned":true,"size":1605896},"doc-9d3eec8b":{"id":"doc-9d3eec8b","name":"视觉注意力机制综述（王文冠）.pdf","pages":24,"type":"pdf","isScanned":false,"size":2778355}},"ideas":[],"nodes":[{"id":"doc-b2613a49","type":"document","content":"深度学习研究综述（尹宝才）.pdf","source":{"docId":"doc-b2613a49","page":1},"embedding":null,"weight":10,"aliases":[],"meta":{"level":0,"page":1},"label":"深度学习研究综述（尹宝才）.pdf","keyword":"","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":1,"level":0},{"id":"doc-fe466a6d","type":"document","content":"卷积神经网络研究综述（李彦冬）.pdf","source":{"docId":"doc-fe466a6d","page":1},"embedding":null,"weight":10,"aliases":[],"meta":{"level":0,"page":1},"label":"卷积神经网络研究综述（李彦冬）.pdf","keyword":"","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":1,"level":0},{"id":"doc-9d3eec8b","type":"document","content":"视觉注意力机制综述（王文冠）.pdf","source":{"docId":"doc-9d3eec8b","page":1},"embedding":null,"weight":10,"aliases":[],"meta":{"level":0,"page":1},"label":"视觉注意力机制综述（王文冠）.pdf","keyword":"","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":1,"level":0},{"id":"dl-architectures","type":"heading","content":"深度网络结构谱系","source":{"docId":"doc-b2613a49","page":2},"embedding":null,"weight":9,"aliases":[],"meta":{"level":1,"page":2},"label":"深度网络结构谱系","keyword":"","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":2,"level":1},{"id":"dl-training","type":"heading","content":"训练与表示学习","source":{"docId":"doc-b2613a49","page":5},"embedding":null,"weight":8,"aliases":[],"meta":{"level":1,"page":5},"label":"训练与表示学习","keyword":"","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":5,"level":1},{"id":"dl-applications","type":"heading","content":"典型应用场景","source":{"docId":"doc-b2613a49","page":8},"embedding":null,"weight":8,"aliases":[],"meta":{"level":1,"page":8},"label":"典型应用场景","keyword":"","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":8,"level":1},{"id":"dl-challenges","type":"heading","content":"问题与发展趋势","source":{"docId":"doc-b2613a49","page":9},"embedding":null,"weight":8,"aliases":[],"meta":{"level":1,"page":9},"label":"问题与发展趋势","keyword":"","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":9,"level":1},{"id":"dl-feedforward","type":"entity","content":"前馈深度网络","source":{"docId":"doc-b2613a49","page":2},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":2},"label":"前馈深度网络","keyword":"前馈深度网络","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":2,"level":2},{"id":"dl-cnn","type":"entity","content":"卷积神经网络","source":{"docId":"doc-b2613a49","page":3},"embedding":null,"weight":10,"aliases":[],"meta":{"level":2,"page":3},"label":"卷积神经网络","keyword":"卷积神经网络","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":3,"level":2},{"id":"dl-autoencoder","type":"entity","content":"自动编码器","source":{"docId":"doc-b2613a49","page":4},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":4},"label":"自动编码器","keyword":"自动编码器","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":4,"level":2},{"id":"dl-dbn","type":"entity","content":"深度置信网络","source":{"docId":"doc-b2613a49","page":5},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":5},"label":"深度置信网络","keyword":"深度置信网络","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":5,"level":2},{"id":"dl-rbm","type":"entity","content":"受限玻尔兹曼机","source":{"docId":"doc-b2613a49","page":6},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":6},"label":"受限玻尔兹曼机","keyword":"受限玻尔兹曼机","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":6,"level":2},{"id":"dl-rnn","type":"entity","content":"循环神经网络","source":{"docId":"doc-b2613a49","page":7},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":7},"label":"循环神经网络","keyword":"循环神经网络","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":7,"level":2},{"id":"dl-backprop","type":"entity","content":"反向传播","source":{"docId":"doc-b2613a49","page":2},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":2},"label":"反向传播","keyword":"反向传播","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":2,"level":2},{"id":"dl-pretraining","type":"entity","content":"无监督预训练","source":{"docId":"doc-b2613a49","page":5},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":5},"label":"无监督预训练","keyword":"无监督预训练","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":5,"level":2},{"id":"dl-representation","type":"entity","content":"特征表示学习","source":{"docId":"doc-b2613a49","page":3},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":3},"label":"特征表示学习","keyword":"特征表示学习","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":3,"level":2},{"id":"dl-regularization","type":"entity","content":"正则化与泛化","source":{"docId":"doc-b2613a49","page":9},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":9},"label":"正则化与泛化","keyword":"正则化与泛化","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":9,"level":2},{"id":"dl-speech","type":"entity","content":"语音识别","source":{"docId":"doc-b2613a49","page":8},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":8},"label":"语音识别","keyword":"语音识别","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":8,"level":2},{"id":"dl-vision","type":"entity","content":"计算机视觉","source":{"docId":"doc-b2613a49","page":8},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":8},"label":"计算机视觉","keyword":"计算机视觉","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":8,"level":2},{"id":"dl-mt","type":"entity","content":"机器翻译","source":{"docId":"doc-b2613a49","page":8},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":8},"label":"机器翻译","keyword":"机器翻译","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":8,"level":2},{"id":"dl-data-compute","type":"entity","content":"大规模数据与算力","source":{"docId":"doc-b2613a49","page":9},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":9},"label":"大规模数据与算力","keyword":"大规模数据与算力","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":9,"level":2},{"id":"dl-transfer","type":"entity","content":"迁移学习","source":{"docId":"doc-b2613a49","page":10},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":10},"label":"迁移学习","keyword":"迁移学习","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":10,"level":2},{"id":"dl-interpretability","type":"entity","content":"模型可解释性","source":{"docId":"doc-b2613a49","page":10},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":10},"label":"模型可解释性","keyword":"模型可解释性","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":10,"level":2},{"id":"dl-generalization","type":"entity","content":"泛化能力","source":{"docId":"doc-b2613a49","page":9},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":9},"label":"泛化能力","keyword":"泛化能力","docId":"doc-b2613a49","docName":"深度学习研究综述（尹宝才）.pdf","page":9,"level":2},{"id":"cnn-history","type":"heading","content":"发展历史与意义","source":{"docId":"doc-fe466a6d","page":1},"embedding":null,"weight":8,"aliases":[],"meta":{"level":1,"page":1},"label":"发展历史与意义","keyword":"","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":1,"level":1},{"id":"cnn-principles","type":"heading","content":"卷积神经网络基本原理","source":{"docId":"doc-fe466a6d","page":2},"embedding":null,"weight":10,"aliases":[],"meta":{"level":1,"page":2},"label":"卷积神经网络基本原理","keyword":"","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":2,"level":1},{"id":"cnn-training","type":"heading","content":"训练策略与过拟合","source":{"docId":"doc-fe466a6d","page":4},"embedding":null,"weight":8,"aliases":[],"meta":{"level":1,"page":4},"label":"训练策略与过拟合","keyword":"","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":4,"level":1},{"id":"cnn-architectures","type":"heading","content":"结构演进与特征表达","source":{"docId":"doc-fe466a6d","page":5},"embedding":null,"weight":9,"aliases":[],"meta":{"level":1,"page":5},"label":"结构演进与特征表达","keyword":"","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":5,"level":1},{"id":"cnn-applications","type":"heading","content":"典型视觉应用","source":{"docId":"doc-fe466a6d","page":7},"embedding":null,"weight":8,"aliases":[],"meta":{"level":1,"page":7},"label":"典型视觉应用","keyword":"","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":7,"level":1},{"id":"cnn-challenges","type":"heading","content":"局限与发展方向","source":{"docId":"doc-fe466a6d","page":8},"embedding":null,"weight":7,"aliases":[],"meta":{"level":1,"page":8},"label":"局限与发展方向","keyword":"","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":8,"level":1},{"id":"cnn-receptive-field","type":"entity","content":"感受野思想","source":{"docId":"doc-fe466a6d","page":1},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":1},"label":"感受野思想","keyword":"感受野思想","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":1,"level":2},{"id":"cnn-lenet","type":"entity","content":"LeNet-5","source":{"docId":"doc-fe466a6d","page":1},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":1},"label":"LeNet-5","keyword":"LeNet-5","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":1,"level":2},{"id":"cnn-alexnet","type":"entity","content":"AlexNet","source":{"docId":"doc-fe466a6d","page":5},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":5},"label":"AlexNet","keyword":"AlexNet","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":5,"level":2},{"id":"doc-fe466a6d_e_神经网络","type":"entity","content":"卷积神经网络","source":{"docId":"doc-fe466a6d","page":2},"embedding":null,"weight":10,"aliases":[],"meta":{"level":2,"page":2},"label":"卷积神经网络","keyword":"卷积神经网络","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":2,"level":2},{"id":"cnn-local","type":"entity","content":"局部连接","source":{"docId":"doc-fe466a6d","page":2},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":2},"label":"局部连接","keyword":"局部连接","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":2,"level":2},{"id":"cnn-sharing","type":"entity","content":"权值共享","source":{"docId":"doc-fe466a6d","page":2},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":2},"label":"权值共享","keyword":"权值共享","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":2,"level":2},{"id":"cnn-convolution","type":"entity","content":"卷积层","source":{"docId":"doc-fe466a6d","page":2},"embedding":null,"weight":10,"aliases":[],"meta":{"level":2,"page":2},"label":"卷积层","keyword":"卷积层","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":2,"level":2},{"id":"doc-fe466a6d_e_特征图","type":"entity","content":"特征图","source":{"docId":"doc-fe466a6d","page":2},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":2},"label":"特征图","keyword":"特征图","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":2,"level":2},{"id":"cnn-activation","type":"entity","content":"非线性激活函数","source":{"docId":"doc-fe466a6d","page":3},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":3},"label":"非线性激活函数","keyword":"非线性激活函数","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":3,"level":2},{"id":"cnn-pooling","type":"entity","content":"池化与下采样","source":{"docId":"doc-fe466a6d","page":3},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":3},"label":"池化与下采样","keyword":"池化与下采样","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":3,"level":2},{"id":"cnn-backprop","type":"entity","content":"反向传播训练","source":{"docId":"doc-fe466a6d","page":4},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":4},"label":"反向传播训练","keyword":"反向传播训练","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":4,"level":2},{"id":"cnn-dropout","type":"entity","content":"Dropout","source":{"docId":"doc-fe466a6d","page":4},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":4},"label":"Dropout","keyword":"Dropout","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":4,"level":2},{"id":"cnn-augmentation","type":"entity","content":"数据增强","source":{"docId":"doc-fe466a6d","page":4},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":4},"label":"数据增强","keyword":"数据增强","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":4,"level":2},{"id":"cnn-overfit","type":"entity","content":"过拟合","source":{"docId":"doc-fe466a6d","page":4},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":4},"label":"过拟合","keyword":"过拟合","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":4,"level":2},{"id":"cnn-hierarchy","type":"entity","content":"层级特征表达","source":{"docId":"doc-fe466a6d","page":5},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":5},"label":"层级特征表达","keyword":"层级特征表达","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":5,"level":2},{"id":"cnn-multiscale","type":"entity","content":"多尺度特征","source":{"docId":"doc-fe466a6d","page":5},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":5},"label":"多尺度特征","keyword":"多尺度特征","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":5,"level":2},{"id":"cnn-maxout","type":"entity","content":"Maxout","source":{"docId":"doc-fe466a6d","page":5},"embedding":null,"weight":6,"aliases":[],"meta":{"level":2,"page":5},"label":"Maxout","keyword":"Maxout","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":5,"level":2},{"id":"doc-fe466a6d_e_迁移学习","type":"entity","content":"迁移学习","source":{"docId":"doc-fe466a6d","page":6},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":6},"label":"迁移学习","keyword":"迁移学习","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":6,"level":2},{"id":"cnn-classification","type":"entity","content":"图像分类","source":{"docId":"doc-fe466a6d","page":7},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":7},"label":"图像分类","keyword":"图像分类","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":7,"level":2},{"id":"cnn-detection","type":"entity","content":"目标检测","source":{"docId":"doc-fe466a6d","page":7},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":7},"label":"目标检测","keyword":"目标检测","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":7,"level":2},{"id":"cnn-face","type":"entity","content":"人脸识别","source":{"docId":"doc-fe466a6d","page":7},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":7},"label":"人脸识别","keyword":"人脸识别","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":7,"level":2},{"id":"cnn-compute","type":"entity","content":"计算与存储开销","source":{"docId":"doc-fe466a6d","page":8},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":8},"label":"计算与存储开销","keyword":"计算与存储开销","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":8,"level":2},{"id":"cnn-interpretability","type":"entity","content":"模型可解释性","source":{"docId":"doc-fe466a6d","page":8},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":8},"label":"模型可解释性","keyword":"模型可解释性","docId":"doc-fe466a6d","docName":"卷积神经网络研究综述（李彦冬）.pdf","page":8,"level":2},{"id":"attn-mechanism","type":"heading","content":"视觉注意力机制分类","source":{"docId":"doc-9d3eec8b","page":2},"embedding":null,"weight":10,"aliases":[],"meta":{"level":1,"page":2},"label":"视觉注意力机制分类","keyword":"","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":2,"level":1},{"id":"attn-fixation","type":"heading","content":"人眼关注点检测","source":{"docId":"doc-9d3eec8b","page":2},"embedding":null,"weight":8,"aliases":[],"meta":{"level":1,"page":2},"label":"人眼关注点检测","keyword":"","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":2,"level":1},{"id":"attn-object","type":"heading","content":"显著物体检测","source":{"docId":"doc-9d3eec8b","page":4},"embedding":null,"weight":9,"aliases":[],"meta":{"level":1,"page":4},"label":"显著物体检测","keyword":"","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":4,"level":1},{"id":"attn-datasets","type":"heading","content":"视觉显著性数据集","source":{"docId":"doc-9d3eec8b","page":7},"embedding":null,"weight":8,"aliases":[],"meta":{"level":1,"page":7},"label":"视觉显著性数据集","keyword":"","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":7,"level":1},{"id":"attn-metrics","type":"heading","content":"评估指标体系","source":{"docId":"doc-9d3eec8b","page":11},"embedding":null,"weight":9,"aliases":[],"meta":{"level":1,"page":11},"label":"评估指标体系","keyword":"","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":11,"level":1},{"id":"attn-deep","type":"heading","content":"深度学习注意力模型","source":{"docId":"doc-9d3eec8b","page":19},"embedding":null,"weight":10,"aliases":[],"meta":{"level":1,"page":19},"label":"深度学习注意力模型","keyword":"","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":19,"level":1},{"id":"attn-outlook","type":"heading","content":"总结与发展方向","source":{"docId":"doc-9d3eec8b","page":18},"embedding":null,"weight":7,"aliases":[],"meta":{"level":1,"page":18},"label":"总结与发展方向","keyword":"","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":18,"level":1},{"id":"attn-core","type":"entity","content":"视觉注意力","source":{"docId":"doc-9d3eec8b","page":2},"embedding":null,"weight":10,"aliases":[],"meta":{"level":2,"page":2},"label":"视觉注意力","keyword":"视觉注意力","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":2,"level":2},{"id":"doc-9d3eec8b_e_自底向上","type":"entity","content":"自底向上注意","source":{"docId":"doc-9d3eec8b","page":3},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":3},"label":"自底向上注意","keyword":"自底向上注意","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":3,"level":2},{"id":"attn-topdown","type":"entity","content":"自顶向下注意","source":{"docId":"doc-9d3eec8b","page":3},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":3},"label":"自顶向下注意","keyword":"自顶向下注意","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":3,"level":2},{"id":"attn-saliency-map","type":"entity","content":"显著图","source":{"docId":"doc-9d3eec8b","page":3},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":3},"label":"显著图","keyword":"显著图","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":3,"level":2},{"id":"attn-static-fixation","type":"entity","content":"静态图像关注点预测","source":{"docId":"doc-9d3eec8b","page":2},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":2},"label":"静态图像关注点预测","keyword":"静态图像关注点预测","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":2,"level":2},{"id":"attn-dynamic-fixation","type":"entity","content":"动态场景关注点预测","source":{"docId":"doc-9d3eec8b","page":4},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":4},"label":"动态场景关注点预测","keyword":"动态场景关注点预测","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":4,"level":2},{"id":"attn-eye-tracking","type":"entity","content":"眼动数据","source":{"docId":"doc-9d3eec8b","page":4},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":4},"label":"眼动数据","keyword":"眼动数据","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":4,"level":2},{"id":"attn-image-object","type":"entity","content":"图像显著物体检测","source":{"docId":"doc-9d3eec8b","page":4},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":4},"label":"图像显著物体检测","keyword":"图像显著物体检测","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":4,"level":2},{"id":"attn-video-object","type":"entity","content":"视频显著物体检测","source":{"docId":"doc-9d3eec8b","page":6},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":6},"label":"视频显著物体检测","keyword":"视频显著物体检测","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":6,"level":2},{"id":"attn-contrast","type":"entity","content":"前景—背景对比","source":{"docId":"doc-9d3eec8b","page":5},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":5},"label":"前景—背景对比","keyword":"前景—背景对比","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":5,"level":2},{"id":"attn-image-eye-dataset","type":"entity","content":"图像眼动数据集","source":{"docId":"doc-9d3eec8b","page":7},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":7},"label":"图像眼动数据集","keyword":"图像眼动数据集","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":7,"level":2},{"id":"attn-video-eye-dataset","type":"entity","content":"视频眼动数据集","source":{"docId":"doc-9d3eec8b","page":8},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":8},"label":"视频眼动数据集","keyword":"视频眼动数据集","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":8,"level":2},{"id":"attn-image-object-dataset","type":"entity","content":"图像显著物体数据集","source":{"docId":"doc-9d3eec8b","page":9},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":9},"label":"图像显著物体数据集","keyword":"图像显著物体数据集","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":9,"level":2},{"id":"attn-video-object-dataset","type":"entity","content":"视频显著物体数据集","source":{"docId":"doc-9d3eec8b","page":10},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":10},"label":"视频显著物体数据集","keyword":"视频显著物体数据集","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":10,"level":2},{"id":"doc-9d3eec8b_e_评估指标","type":"entity","content":"评估指标","source":{"docId":"doc-9d3eec8b","page":11},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":11},"label":"评估指标","keyword":"评估指标","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":11,"level":2},{"id":"attn-auc","type":"entity","content":"AUC","source":{"docId":"doc-9d3eec8b","page":12},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":12},"label":"AUC","keyword":"AUC","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":12,"level":2},{"id":"attn-nss","type":"entity","content":"NSS","source":{"docId":"doc-9d3eec8b","page":12},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":12},"label":"NSS","keyword":"NSS","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":12,"level":2},{"id":"attn-cc","type":"entity","content":"线性相关系数 CC","source":{"docId":"doc-9d3eec8b","page":12},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":12},"label":"线性相关系数 CC","keyword":"线性相关系数 CC","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":12,"level":2},{"id":"attn-sim","type":"entity","content":"相似性测度 SIM","source":{"docId":"doc-9d3eec8b","page":12},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":12},"label":"相似性测度 SIM","keyword":"相似性测度 SIM","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":12,"level":2},{"id":"attn-prf","type":"entity","content":"PR 曲线与 F-measure","source":{"docId":"doc-9d3eec8b","page":13},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":13},"label":"PR 曲线与 F-measure","keyword":"PR 曲线与 F-measure","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":13,"level":2},{"id":"attn-mae","type":"entity","content":"MAE","source":{"docId":"doc-9d3eec8b","page":14},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":14},"label":"MAE","keyword":"MAE","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":14,"level":2},{"id":"doc-9d3eec8b_e_深度学习","type":"entity","content":"深度学习","source":{"docId":"doc-9d3eec8b","page":19},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":19},"label":"深度学习","keyword":"深度学习","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":19,"level":2},{"id":"attn-spatial","type":"entity","content":"空间注意力","source":{"docId":"doc-9d3eec8b","page":19},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":19},"label":"空间注意力","keyword":"空间注意力","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":19,"level":2},{"id":"attn-channel","type":"entity","content":"通道注意力","source":{"docId":"doc-9d3eec8b","page":19},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":19},"label":"通道注意力","keyword":"通道注意力","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":19,"level":2},{"id":"attn-temporal","type":"entity","content":"时序注意力","source":{"docId":"doc-9d3eec8b","page":20},"embedding":null,"weight":8,"aliases":[],"meta":{"level":2,"page":20},"label":"时序注意力","keyword":"时序注意力","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":20,"level":2},{"id":"attn-self","type":"entity","content":"自注意力","source":{"docId":"doc-9d3eec8b","page":20},"embedding":null,"weight":9,"aliases":[],"meta":{"level":2,"page":20},"label":"自注意力","keyword":"自注意力","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":20,"level":2},{"id":"attn-multimodal","type":"entity","content":"多模态注意力融合","source":{"docId":"doc-9d3eec8b","page":20},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":20},"label":"多模态注意力融合","keyword":"多模态注意力融合","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":20,"level":2},{"id":"attn-explain","type":"entity","content":"可解释注意力","source":{"docId":"doc-9d3eec8b","page":21},"embedding":null,"weight":7,"aliases":[],"meta":{"level":2,"page":21},"label":"可解释注意力","keyword":"可解释注意力","docId":"doc-9d3eec8b","docName":"视觉注意力机制综述（王文冠）.pdf","page":21,"level":2}],"edges":[{"id":"e-001","from":"doc-b2613a49","to":"dl-architectures","source":"doc-b2613a49","target":"dl-architectures","type":"contains","weight":1.5},{"id":"e-002","from":"doc-b2613a49","to":"dl-training","source":"doc-b2613a49","target":"dl-training","type":"contains","weight":1.5},{"id":"e-003","from":"doc-b2613a49","to":"dl-applications","source":"doc-b2613a49","target":"dl-applications","type":"contains","weight":1.5},{"id":"e-004","from":"doc-b2613a49","to":"dl-challenges","source":"doc-b2613a49","target":"dl-challenges","type":"contains","weight":1.5},{"id":"e-005","from":"dl-architectures","to":"dl-feedforward","source":"dl-architectures","target":"dl-feedforward","type":"contains","weight":1.2},{"id":"e-006","from":"dl-architectures","to":"dl-cnn","source":"dl-architectures","target":"dl-cnn","type":"contains","weight":1.2},{"id":"e-007","from":"dl-architectures","to":"dl-autoencoder","source":"dl-architectures","target":"dl-autoencoder","type":"contains","weight":1.2},{"id":"e-008","from":"dl-architectures","to":"dl-dbn","source":"dl-architectures","target":"dl-dbn","type":"contains","weight":1.2},{"id":"e-009","from":"dl-architectures","to":"dl-rbm","source":"dl-architectures","target":"dl-rbm","type":"contains","weight":1.2},{"id":"e-010","from":"dl-architectures","to":"dl-rnn","source":"dl-architectures","target":"dl-rnn","type":"contains","weight":1.2},{"id":"e-011","from":"dl-training","to":"dl-backprop","source":"dl-training","target":"dl-backprop","type":"contains","weight":1.2},{"id":"e-012","from":"dl-training","to":"dl-pretraining","source":"dl-training","target":"dl-pretraining","type":"contains","weight":1.2},{"id":"e-013","from":"dl-training","to":"dl-representation","source":"dl-training","target":"dl-representation","type":"contains","weight":1.2},{"id":"e-014","from":"dl-training","to":"dl-regularization","source":"dl-training","target":"dl-regularization","type":"contains","weight":1.2},{"id":"e-015","from":"dl-applications","to":"dl-speech","source":"dl-applications","target":"dl-speech","type":"contains","weight":1.2},{"id":"e-016","from":"dl-applications","to":"dl-vision","source":"dl-applications","target":"dl-vision","type":"contains","weight":1.2},{"id":"e-017","from":"dl-applications","to":"dl-mt","source":"dl-applications","target":"dl-mt","type":"contains","weight":1.2},{"id":"e-018","from":"dl-challenges","to":"dl-data-compute","source":"dl-challenges","target":"dl-data-compute","type":"contains","weight":1.2},{"id":"e-019","from":"dl-challenges","to":"dl-transfer","source":"dl-challenges","target":"dl-transfer","type":"contains","weight":1.2},{"id":"e-020","from":"dl-challenges","to":"dl-interpretability","source":"dl-challenges","target":"dl-interpretability","type":"contains","weight":1.2},{"id":"e-021","from":"dl-challenges","to":"dl-generalization","source":"dl-challenges","target":"dl-generalization","type":"contains","weight":1.2},{"id":"e-022","from":"dl-feedforward","to":"dl-backprop","source":"dl-feedforward","target":"dl-backprop","type":"co-occurrence","weight":0.85,"evidence":{"relation":"前馈网络通常采用反向传播训练","method":"curated"}},{"id":"e-023","from":"dl-autoencoder","to":"dl-representation","source":"dl-autoencoder","target":"dl-representation","type":"co-occurrence","weight":0.85,"evidence":{"relation":"自动编码器用于无监督表示学习","method":"curated"}},{"id":"e-024","from":"dl-dbn","to":"dl-rbm","source":"dl-dbn","target":"dl-rbm","type":"co-occurrence","weight":0.85,"evidence":{"relation":"深度置信网络可由受限玻尔兹曼机堆叠","method":"curated"}},{"id":"e-025","from":"dl-pretraining","to":"dl-dbn","source":"dl-pretraining","target":"dl-dbn","type":"co-occurrence","weight":0.85,"evidence":{"relation":"深度置信网络使用逐层预训练","method":"curated"}},{"id":"e-026","from":"dl-regularization","to":"dl-generalization","source":"dl-regularization","target":"dl-generalization","type":"co-occurrence","weight":0.85,"evidence":{"relation":"正则化用于提升泛化","method":"curated"}},{"id":"e-027","from":"dl-cnn","to":"dl-vision","source":"dl-cnn","target":"dl-vision","type":"co-occurrence","weight":0.85,"evidence":{"relation":"CNN是计算机视觉的重要模型","method":"curated"}},{"id":"e-028","from":"dl-rnn","to":"dl-speech","source":"dl-rnn","target":"dl-speech","type":"co-occurrence","weight":0.85,"evidence":{"relation":"RNN适合序列建模","method":"curated"}},{"id":"e-029","from":"dl-rnn","to":"dl-mt","source":"dl-rnn","target":"dl-mt","type":"co-occurrence","weight":0.85,"evidence":{"relation":"RNN用于机器翻译序列建模","method":"curated"}},{"id":"e-030","from":"dl-transfer","to":"dl-data-compute","source":"dl-transfer","target":"dl-data-compute","type":"co-occurrence","weight":0.85,"evidence":{"relation":"迁移学习缓解标注数据与训练成本压力","method":"curated"}},{"id":"e-031","from":"doc-fe466a6d","to":"cnn-history","source":"doc-fe466a6d","target":"cnn-history","type":"contains","weight":1.5},{"id":"e-032","from":"doc-fe466a6d","to":"cnn-principles","source":"doc-fe466a6d","target":"cnn-principles","type":"contains","weight":1.5},{"id":"e-033","from":"doc-fe466a6d","to":"cnn-training","source":"doc-fe466a6d","target":"cnn-training","type":"contains","weight":1.5},{"id":"e-034","from":"doc-fe466a6d","to":"cnn-architectures","source":"doc-fe466a6d","target":"cnn-architectures","type":"contains","weight":1.5},{"id":"e-035","from":"doc-fe466a6d","to":"cnn-applications","source":"doc-fe466a6d","target":"cnn-applications","type":"contains","weight":1.5},{"id":"e-036","from":"doc-fe466a6d","to":"cnn-challenges","source":"doc-fe466a6d","target":"cnn-challenges","type":"contains","weight":1.5},{"id":"e-037","from":"cnn-history","to":"cnn-receptive-field","source":"cnn-history","target":"cnn-receptive-field","type":"contains","weight":1.2},{"id":"e-038","from":"cnn-history","to":"cnn-lenet","source":"cnn-history","target":"cnn-lenet","type":"contains","weight":1.2},{"id":"e-039","from":"cnn-history","to":"cnn-alexnet","source":"cnn-history","target":"cnn-alexnet","type":"contains","weight":1.2},{"id":"e-040","from":"cnn-principles","to":"doc-fe466a6d_e_神经网络","source":"cnn-principles","target":"doc-fe466a6d_e_神经网络","type":"contains","weight":1.2},{"id":"e-041","from":"cnn-principles","to":"cnn-local","source":"cnn-principles","target":"cnn-local","type":"contains","weight":1.2},{"id":"e-042","from":"cnn-principles","to":"cnn-sharing","source":"cnn-principles","target":"cnn-sharing","type":"contains","weight":1.2},{"id":"e-043","from":"cnn-principles","to":"cnn-convolution","source":"cnn-principles","target":"cnn-convolution","type":"contains","weight":1.2},{"id":"e-044","from":"cnn-principles","to":"doc-fe466a6d_e_特征图","source":"cnn-principles","target":"doc-fe466a6d_e_特征图","type":"contains","weight":1.2},{"id":"e-045","from":"cnn-principles","to":"cnn-activation","source":"cnn-principles","target":"cnn-activation","type":"contains","weight":1.2},{"id":"e-046","from":"cnn-principles","to":"cnn-pooling","source":"cnn-principles","target":"cnn-pooling","type":"contains","weight":1.2},{"id":"e-047","from":"cnn-training","to":"cnn-backprop","source":"cnn-training","target":"cnn-backprop","type":"contains","weight":1.2},{"id":"e-048","from":"cnn-training","to":"cnn-dropout","source":"cnn-training","target":"cnn-dropout","type":"contains","weight":1.2},{"id":"e-049","from":"cnn-training","to":"cnn-augmentation","source":"cnn-training","target":"cnn-augmentation","type":"contains","weight":1.2},{"id":"e-050","from":"cnn-training","to":"cnn-overfit","source":"cnn-training","target":"cnn-overfit","type":"contains","weight":1.2},{"id":"e-051","from":"cnn-architectures","to":"cnn-hierarchy","source":"cnn-architectures","target":"cnn-hierarchy","type":"contains","weight":1.2},{"id":"e-052","from":"cnn-architectures","to":"cnn-multiscale","source":"cnn-architectures","target":"cnn-multiscale","type":"contains","weight":1.2},{"id":"e-053","from":"cnn-architectures","to":"cnn-maxout","source":"cnn-architectures","target":"cnn-maxout","type":"contains","weight":1.2},{"id":"e-054","from":"cnn-architectures","to":"doc-fe466a6d_e_迁移学习","source":"cnn-architectures","target":"doc-fe466a6d_e_迁移学习","type":"contains","weight":1.2},{"id":"e-055","from":"cnn-applications","to":"cnn-classification","source":"cnn-applications","target":"cnn-classification","type":"contains","weight":1.2},{"id":"e-056","from":"cnn-applications","to":"cnn-detection","source":"cnn-applications","target":"cnn-detection","type":"contains","weight":1.2},{"id":"e-057","from":"cnn-applications","to":"cnn-face","source":"cnn-applications","target":"cnn-face","type":"contains","weight":1.2},{"id":"e-058","from":"cnn-challenges","to":"cnn-compute","source":"cnn-challenges","target":"cnn-compute","type":"contains","weight":1.2},{"id":"e-059","from":"cnn-challenges","to":"cnn-interpretability","source":"cnn-challenges","target":"cnn-interpretability","type":"contains","weight":1.2},{"id":"e-060","from":"cnn-receptive-field","to":"cnn-local","source":"cnn-receptive-field","target":"cnn-local","type":"co-occurrence","weight":0.85,"evidence":{"relation":"局部连接源于感受野思想","method":"curated"}},{"id":"e-061","from":"cnn-local","to":"cnn-sharing","source":"cnn-local","target":"cnn-sharing","type":"co-occurrence","weight":0.85,"evidence":{"relation":"局部连接与权值共享共同降低参数量","method":"curated"}},{"id":"e-062","from":"cnn-convolution","to":"doc-fe466a6d_e_特征图","source":"cnn-convolution","target":"doc-fe466a6d_e_特征图","type":"co-occurrence","weight":0.85,"evidence":{"relation":"卷积层生成特征图","method":"curated"}},{"id":"e-063","from":"doc-fe466a6d_e_特征图","to":"cnn-pooling","source":"doc-fe466a6d_e_特征图","target":"cnn-pooling","type":"co-occurrence","weight":0.85,"evidence":{"relation":"池化压缩特征图空间分辨率","method":"curated"}},{"id":"e-064","from":"cnn-activation","to":"cnn-hierarchy","source":"cnn-activation","target":"cnn-hierarchy","type":"co-occurrence","weight":0.85,"evidence":{"relation":"非线性激活支持层级特征学习","method":"curated"}},{"id":"e-065","from":"cnn-dropout","to":"cnn-overfit","source":"cnn-dropout","target":"cnn-overfit","type":"co-occurrence","weight":0.85,"evidence":{"relation":"Dropout用于缓解过拟合","method":"curated"}},{"id":"e-066","from":"cnn-augmentation","to":"cnn-overfit","source":"cnn-augmentation","target":"cnn-overfit","type":"co-occurrence","weight":0.85,"evidence":{"relation":"数据增强用于缓解过拟合","method":"curated"}},{"id":"e-067","from":"cnn-alexnet","to":"cnn-dropout","source":"cnn-alexnet","target":"cnn-dropout","type":"co-occurrence","weight":0.85,"evidence":{"relation":"AlexNet推动Dropout等训练技巧普及","method":"curated"}},{"id":"e-068","from":"cnn-hierarchy","to":"cnn-classification","source":"cnn-hierarchy","target":"cnn-classification","type":"co-occurrence","weight":0.85,"evidence":{"relation":"层级特征用于图像分类","method":"curated"}},{"id":"e-069","from":"cnn-hierarchy","to":"cnn-detection","source":"cnn-hierarchy","target":"cnn-detection","type":"co-occurrence","weight":0.85,"evidence":{"relation":"层级特征用于目标检测","method":"curated"}},{"id":"e-070","from":"doc-fe466a6d_e_迁移学习","to":"cnn-classification","source":"doc-fe466a6d_e_迁移学习","target":"cnn-classification","type":"co-occurrence","weight":0.85,"evidence":{"relation":"预训练特征可迁移到分类任务","method":"curated"}},{"id":"e-071","from":"cnn-compute","to":"cnn-multiscale","source":"cnn-compute","target":"cnn-multiscale","type":"co-occurrence","weight":0.85,"evidence":{"relation":"多尺度处理增加计算开销","method":"curated"}},{"id":"e-072","from":"doc-9d3eec8b","to":"attn-mechanism","source":"doc-9d3eec8b","target":"attn-mechanism","type":"contains","weight":1.5},{"id":"e-073","from":"doc-9d3eec8b","to":"attn-fixation","source":"doc-9d3eec8b","target":"attn-fixation","type":"contains","weight":1.5},{"id":"e-074","from":"doc-9d3eec8b","to":"attn-object","source":"doc-9d3eec8b","target":"attn-object","type":"contains","weight":1.5},{"id":"e-075","from":"doc-9d3eec8b","to":"attn-datasets","source":"doc-9d3eec8b","target":"attn-datasets","type":"contains","weight":1.5},{"id":"e-076","from":"doc-9d3eec8b","to":"attn-metrics","source":"doc-9d3eec8b","target":"attn-metrics","type":"contains","weight":1.5},{"id":"e-077","from":"doc-9d3eec8b","to":"attn-deep","source":"doc-9d3eec8b","target":"attn-deep","type":"contains","weight":1.5},{"id":"e-078","from":"doc-9d3eec8b","to":"attn-outlook","source":"doc-9d3eec8b","target":"attn-outlook","type":"contains","weight":1.5},{"id":"e-079","from":"attn-mechanism","to":"attn-core","source":"attn-mechanism","target":"attn-core","type":"contains","weight":1.2},{"id":"e-080","from":"attn-mechanism","to":"doc-9d3eec8b_e_自底向上","source":"attn-mechanism","target":"doc-9d3eec8b_e_自底向上","type":"contains","weight":1.2},{"id":"e-081","from":"attn-mechanism","to":"attn-topdown","source":"attn-mechanism","target":"attn-topdown","type":"contains","weight":1.2},{"id":"e-082","from":"attn-mechanism","to":"attn-saliency-map","source":"attn-mechanism","target":"attn-saliency-map","type":"contains","weight":1.2},{"id":"e-083","from":"attn-fixation","to":"attn-static-fixation","source":"attn-fixation","target":"attn-static-fixation","type":"contains","weight":1.2},{"id":"e-084","from":"attn-fixation","to":"attn-dynamic-fixation","source":"attn-fixation","target":"attn-dynamic-fixation","type":"contains","weight":1.2},{"id":"e-085","from":"attn-fixation","to":"attn-eye-tracking","source":"attn-fixation","target":"attn-eye-tracking","type":"contains","weight":1.2},{"id":"e-086","from":"attn-object","to":"attn-image-object","source":"attn-object","target":"attn-image-object","type":"contains","weight":1.2},{"id":"e-087","from":"attn-object","to":"attn-video-object","source":"attn-object","target":"attn-video-object","type":"contains","weight":1.2},{"id":"e-088","from":"attn-object","to":"attn-contrast","source":"attn-object","target":"attn-contrast","type":"contains","weight":1.2},{"id":"e-089","from":"attn-datasets","to":"attn-image-eye-dataset","source":"attn-datasets","target":"attn-image-eye-dataset","type":"contains","weight":1.2},{"id":"e-090","from":"attn-datasets","to":"attn-video-eye-dataset","source":"attn-datasets","target":"attn-video-eye-dataset","type":"contains","weight":1.2},{"id":"e-091","from":"attn-datasets","to":"attn-image-object-dataset","source":"attn-datasets","target":"attn-image-object-dataset","type":"contains","weight":1.2},{"id":"e-092","from":"attn-datasets","to":"attn-video-object-dataset","source":"attn-datasets","target":"attn-video-object-dataset","type":"contains","weight":1.2},{"id":"e-093","from":"attn-metrics","to":"doc-9d3eec8b_e_评估指标","source":"attn-metrics","target":"doc-9d3eec8b_e_评估指标","type":"contains","weight":1.2},{"id":"e-094","from":"attn-metrics","to":"attn-auc","source":"attn-metrics","target":"attn-auc","type":"contains","weight":1.2},{"id":"e-095","from":"attn-metrics","to":"attn-nss","source":"attn-metrics","target":"attn-nss","type":"contains","weight":1.2},{"id":"e-096","from":"attn-metrics","to":"attn-cc","source":"attn-metrics","target":"attn-cc","type":"contains","weight":1.2},{"id":"e-097","from":"attn-metrics","to":"attn-sim","source":"attn-metrics","target":"attn-sim","type":"contains","weight":1.2},{"id":"e-098","from":"attn-metrics","to":"attn-prf","source":"attn-metrics","target":"attn-prf","type":"contains","weight":1.2},{"id":"e-099","from":"attn-metrics","to":"attn-mae","source":"attn-metrics","target":"attn-mae","type":"contains","weight":1.2},{"id":"e-100","from":"attn-deep","to":"doc-9d3eec8b_e_深度学习","source":"attn-deep","target":"doc-9d3eec8b_e_深度学习","type":"contains","weight":1.2},{"id":"e-101","from":"attn-deep","to":"attn-spatial","source":"attn-deep","target":"attn-spatial","type":"contains","weight":1.2},{"id":"e-102","from":"attn-deep","to":"attn-channel","source":"attn-deep","target":"attn-channel","type":"contains","weight":1.2},{"id":"e-103","from":"attn-deep","to":"attn-temporal","source":"attn-deep","target":"attn-temporal","type":"contains","weight":1.2},{"id":"e-104","from":"attn-deep","to":"attn-self","source":"attn-deep","target":"attn-self","type":"contains","weight":1.2},{"id":"e-105","from":"attn-outlook","to":"attn-multimodal","source":"attn-outlook","target":"attn-multimodal","type":"contains","weight":1.2},{"id":"e-106","from":"attn-outlook","to":"attn-explain","source":"attn-outlook","target":"attn-explain","type":"contains","weight":1.2},{"id":"e-107","from":"doc-9d3eec8b_e_自底向上","to":"attn-saliency-map","source":"doc-9d3eec8b_e_自底向上","target":"attn-saliency-map","type":"co-occurrence","weight":0.85,"evidence":{"relation":"自底向上机制依据视觉刺激生成显著图","method":"curated"}},{"id":"e-108","from":"attn-topdown","to":"attn-core","source":"attn-topdown","target":"attn-core","type":"co-occurrence","weight":0.85,"evidence":{"relation":"自顶向下机制由任务与语义目标驱动","method":"curated"}},{"id":"e-109","from":"attn-saliency-map","to":"attn-static-fixation","source":"attn-saliency-map","target":"attn-static-fixation","type":"co-occurrence","weight":0.85,"evidence":{"relation":"显著图可用于预测人眼关注点","method":"curated"}},{"id":"e-110","from":"attn-saliency-map","to":"attn-image-object","source":"attn-saliency-map","target":"attn-image-object","type":"co-occurrence","weight":0.85,"evidence":{"relation":"显著图用于定位显著物体","method":"curated"}},{"id":"e-111","from":"attn-eye-tracking","to":"attn-image-eye-dataset","source":"attn-eye-tracking","target":"attn-image-eye-dataset","type":"co-occurrence","weight":0.85,"evidence":{"relation":"图像眼动数据构成关注点数据集","method":"curated"}},{"id":"e-112","from":"attn-eye-tracking","to":"attn-video-eye-dataset","source":"attn-eye-tracking","target":"attn-video-eye-dataset","type":"co-occurrence","weight":0.85,"evidence":{"relation":"视频眼动数据构成动态关注点数据集","method":"curated"}},{"id":"e-113","from":"attn-image-object","to":"attn-image-object-dataset","source":"attn-image-object","target":"attn-image-object-dataset","type":"co-occurrence","weight":0.85,"evidence":{"relation":"检测模型在图像显著物体数据集上评估","method":"curated"}},{"id":"e-114","from":"attn-video-object","to":"attn-video-object-dataset","source":"attn-video-object","target":"attn-video-object-dataset","type":"co-occurrence","weight":0.85,"evidence":{"relation":"视频模型在视频显著物体数据集上评估","method":"curated"}},{"id":"e-115","from":"attn-static-fixation","to":"attn-auc","source":"attn-static-fixation","target":"attn-auc","type":"co-occurrence","weight":0.85,"evidence":{"relation":"关注点预测常使用AUC","method":"curated"}},{"id":"e-116","from":"attn-static-fixation","to":"attn-nss","source":"attn-static-fixation","target":"attn-nss","type":"co-occurrence","weight":0.85,"evidence":{"relation":"关注点预测常使用NSS","method":"curated"}},{"id":"e-117","from":"attn-static-fixation","to":"attn-cc","source":"attn-static-fixation","target":"attn-cc","type":"co-occurrence","weight":0.85,"evidence":{"relation":"关注点预测可使用相关系数","method":"curated"}},{"id":"e-118","from":"attn-image-object","to":"attn-prf","source":"attn-image-object","target":"attn-prf","type":"co-occurrence","weight":0.85,"evidence":{"relation":"显著物体检测使用PR与F值","method":"curated"}},{"id":"e-119","from":"attn-image-object","to":"attn-mae","source":"attn-image-object","target":"attn-mae","type":"co-occurrence","weight":0.85,"evidence":{"relation":"显著物体检测使用MAE","method":"curated"}},{"id":"e-120","from":"doc-9d3eec8b_e_深度学习","to":"attn-spatial","source":"doc-9d3eec8b_e_深度学习","target":"attn-spatial","type":"co-occurrence","weight":0.85,"evidence":{"relation":"深度网络学习空间注意权重","method":"curated"}},{"id":"e-121","from":"doc-9d3eec8b_e_深度学习","to":"attn-channel","source":"doc-9d3eec8b_e_深度学习","target":"attn-channel","type":"co-occurrence","weight":0.85,"evidence":{"relation":"深度网络学习通道重要性","method":"curated"}},{"id":"e-122","from":"attn-temporal","to":"attn-video-object","source":"attn-temporal","target":"attn-video-object","type":"co-occurrence","weight":0.85,"evidence":{"relation":"时序注意力适合视频建模","method":"curated"}},{"id":"e-123","from":"attn-self","to":"attn-multimodal","source":"attn-self","target":"attn-multimodal","type":"co-occurrence","weight":0.85,"evidence":{"relation":"自注意力支持跨模态关系建模","method":"curated"}},{"id":"e-124","from":"attn-explain","to":"attn-core","source":"attn-explain","target":"attn-core","type":"co-occurrence","weight":0.85,"evidence":{"relation":"注意分布可作为模型解释线索","method":"curated"}},{"id":"e-125","from":"dl-cnn","to":"doc-fe466a6d_e_神经网络","source":"dl-cnn","target":"doc-fe466a6d_e_神经网络","type":"cross-link","weight":1.3,"evidence":{"relation":"卷积神经网络是前馈深度网络在视觉领域的重要分支","method":"curated"}},{"id":"e-126","from":"dl-backprop","to":"cnn-backprop","source":"dl-backprop","target":"cnn-backprop","type":"cross-link","weight":1.1,"evidence":{"relation":"CNN训练继承深度网络的反向传播机制","method":"curated"}},{"id":"e-127","from":"dl-representation","to":"cnn-hierarchy","source":"dl-representation","target":"cnn-hierarchy","type":"cross-link","weight":1.25,"evidence":{"relation":"CNN通过层级结构学习特征表示","method":"curated"}},{"id":"e-128","from":"dl-regularization","to":"cnn-dropout","source":"dl-regularization","target":"cnn-dropout","type":"cross-link","weight":1.2,"evidence":{"relation":"Dropout是CNN中常用的正则化方法","method":"curated"}},{"id":"e-129","from":"dl-transfer","to":"doc-fe466a6d_e_迁移学习","source":"dl-transfer","target":"doc-fe466a6d_e_迁移学习","type":"cross-link","weight":1.3,"evidence":{"relation":"两篇综述共同讨论迁移学习","method":"curated"}},{"id":"e-130","from":"dl-vision","to":"cnn-classification","source":"dl-vision","target":"cnn-classification","type":"cross-link","weight":1.2,"evidence":{"relation":"CNN推动图像分类发展","method":"curated"}},{"id":"e-131","from":"dl-vision","to":"cnn-detection","source":"dl-vision","target":"cnn-detection","type":"cross-link","weight":1.2,"evidence":{"relation":"CNN推动目标检测发展","method":"curated"}},{"id":"e-132","from":"dl-rnn","to":"attn-temporal","source":"dl-rnn","target":"attn-temporal","type":"cross-link","weight":1.0,"evidence":{"relation":"序列模型与时序注意力共同处理动态信息","method":"curated"}},{"id":"e-133","from":"dl-representation","to":"attn-core","source":"dl-representation","target":"attn-core","type":"cross-link","weight":1.1,"evidence":{"relation":"注意力机制对表示进行动态加权","method":"curated"}},{"id":"e-134","from":"dl-interpretability","to":"attn-explain","source":"dl-interpretability","target":"attn-explain","type":"cross-link","weight":1.2,"evidence":{"relation":"注意力分布可用于模型解释","method":"curated"}},{"id":"e-135","from":"dl-cnn","to":"doc-9d3eec8b_e_深度学习","source":"dl-cnn","target":"doc-9d3eec8b_e_深度学习","type":"cross-link","weight":1.2,"evidence":{"relation":"视觉注意力模型建立在深度学习视觉骨干之上","method":"curated"}},{"id":"e-136","from":"doc-fe466a6d_e_神经网络","to":"attn-deep","source":"doc-fe466a6d_e_神经网络","target":"attn-deep","type":"cross-link","weight":1.4,"evidence":{"relation":"注意力模块可嵌入卷积神经网络","method":"curated"}},{"id":"e-137","from":"doc-fe466a6d_e_特征图","to":"attn-spatial","source":"doc-fe466a6d_e_特征图","target":"attn-spatial","type":"cross-link","weight":1.4,"evidence":{"relation":"空间注意力在特征图位置维度分配权重","method":"curated"}},{"id":"e-138","from":"doc-fe466a6d_e_特征图","to":"attn-channel","source":"doc-fe466a6d_e_特征图","target":"attn-channel","type":"cross-link","weight":1.4,"evidence":{"relation":"通道注意力在特征图通道维度分配权重","method":"curated"}},{"id":"e-139","from":"cnn-convolution","to":"doc-9d3eec8b_e_自底向上","source":"cnn-convolution","target":"doc-9d3eec8b_e_自底向上","type":"cross-link","weight":1.0,"evidence":{"relation":"卷积特征支持由低层视觉刺激驱动的注意","method":"curated"}},{"id":"e-140","from":"cnn-hierarchy","to":"attn-saliency-map","source":"cnn-hierarchy","target":"attn-saliency-map","type":"cross-link","weight":1.2,"evidence":{"relation":"多层特征融合用于显著图预测","method":"curated"}},{"id":"e-141","from":"cnn-detection","to":"attn-image-object","source":"cnn-detection","target":"attn-image-object","type":"cross-link","weight":1.15,"evidence":{"relation":"目标检测与显著物体检测都需要定位关键区域","method":"curated"}},{"id":"e-142","from":"cnn-detection","to":"attn-video-object","source":"cnn-detection","target":"attn-video-object","type":"cross-link","weight":1.0,"evidence":{"relation":"视频显著物体检测依赖视觉特征提取","method":"curated"}},{"id":"e-143","from":"cnn-multiscale","to":"attn-contrast","source":"cnn-multiscale","target":"attn-contrast","type":"cross-link","weight":1.1,"evidence":{"relation":"多尺度特征有助于建模前景背景对比","method":"curated"}},{"id":"e-144","from":"cnn-overfit","to":"attn-datasets","source":"cnn-overfit","target":"attn-datasets","type":"cross-link","weight":0.9,"evidence":{"relation":"高质量数据集有助于控制模型过拟合","method":"curated"}},{"id":"e-145","from":"doc-fe466a6d_e_迁移学习","to":"attn-deep","source":"doc-fe466a6d_e_迁移学习","target":"attn-deep","type":"cross-link","weight":1.1,"evidence":{"relation":"预训练CNN可迁移到视觉注意力任务","method":"curated"}},{"id":"e-146","from":"cnn-interpretability","to":"attn-explain","source":"cnn-interpretability","target":"attn-explain","type":"cross-link","weight":1.2,"evidence":{"relation":"注意力机制常被用于增强视觉模型可解释性","method":"curated"}},{"id":"e-147","from":"dl-data-compute","to":"attn-datasets","source":"dl-data-compute","target":"attn-datasets","type":"cross-link","weight":0.95,"evidence":{"relation":"深度模型性能依赖规模化数据集","method":"curated"}}],"stats":{"nodeCount":88,"edgeCount":147,"mergedCount":0,"crossLinks":23,"curation":"manual"}};
+</script>
+  <style>
+    :root{
+      --bg-void:#0a0e1a;--bg-deep:#0f1626;--bg-card:#141d33;--bg-input:#0b1322;
+      --bg-hover:rgba(255,255,255,.045);--border:rgba(255,255,255,.065);
+      --border-strong:rgba(255,255,255,.13);--accent:#06b6d4;--accent-dim:rgba(6,182,212,.15);
+      --accent-glow:rgba(6,182,212,.1);--warm:#f59e0b;--warm-dim:rgba(245,158,11,.12);
+      --emerald:#10b981;--emerald-dim:rgba(16,185,129,.12);--violet:#8b5cf6;
+      --violet-dim:rgba(139,92,246,.12);--rose:#f43f5e;--rose-dim:rgba(244,63,94,.12);
+      --text:#e2e8f0;--text-2:#94a3b8;--text-3:#64748b;--radius:8px;--radius-sm:5px;
+      --font:"Noto Sans SC","Microsoft YaHei UI","Segoe UI",sans-serif;
+      --mono:"JetBrains Mono","Cascadia Code","Consolas",monospace;
+      color-scheme:dark;
+    }
+    [data-theme="light"]{
+      --bg-void:#f7f8f7;--bg-deep:#f1f4f2;--bg-card:#ffffff;--bg-input:#f3f5f4;
+      --bg-hover:rgba(15,118,110,.065);--border:rgba(30,41,59,.13);--border-strong:rgba(30,41,59,.24);
+      --accent:#0f8f83;--accent-dim:rgba(15,143,131,.13);--accent-glow:rgba(15,143,131,.09);
+      --warm:#c65d08;--warm-dim:rgba(198,93,8,.11);--emerald:#07834f;--emerald-dim:rgba(7,131,79,.12);
+      --violet:#6d3ac7;--violet-dim:rgba(109,58,199,.11);--rose:#d91f4f;--rose-dim:rgba(217,31,79,.10);
+      --text:#18212b;--text-2:#465568;--text-3:#687789;color-scheme:light;
+    }
+    /* 亮色主题对比度强化：避免标题、元信息和选中项在白底上发灰 */
+    [data-theme="light"] .brand-name{color:#334155}
+    [data-theme="light"] .brand-name b{color:#008f83}
+    [data-theme="light"] .nav-btn{color:#4b5563}
+    [data-theme="light"] .nav-btn.active{color:#087f75;background:rgba(15,143,131,.12)}
+    [data-theme="light"] .project-label,
+    [data-theme="light"] .doc-meta,
+    [data-theme="light"] .file-size,
+    [data-theme="light"] .search-head,
+    [data-theme="light"] .search-result-meta,
+    [data-theme="light"] .hint{color:#64748b}
+    [data-theme="light"] .doc-name{color:#1f2937;font-weight:650}
+    [data-theme="light"] .doc-item:hover .doc-name{color:#111827}
+    [data-theme="light"] .doc-item.active{
+      background:#e7f5f3;border-color:#a6ddd7;box-shadow:inset 3px 0 #0f8f83
+    }
+    [data-theme="light"] .doc-item.active .doc-name{color:#0b6f67}
+    [data-theme="light"] .doc-item.active .doc-meta{color:#526273}
+    [data-theme="light"] .tag.green{color:#067647;background:#dcfce7}
+    [data-theme="light"] .panel-head h2,
+    [data-theme="light"] .editor-title h2{color:#1f2937}
+    [data-theme="light"] input,
+    [data-theme="light"] select,
+    [data-theme="light"] textarea{color:#18212b}
+    [data-theme="light"] .search-kbd,
+    [data-theme="light"] .tree-search .i,
+    [data-theme="light"] .pdf-toolbar-label{color:#64748b}
+    [data-theme="light"] .demo-mode{background:rgba(255,255,255,.94);color:#64748b}
+    [data-theme="light"] .g-node.selected rect{
+      stroke:#0f766e!important;
+      filter:drop-shadow(0 0 8px rgba(15,118,110,.28)) drop-shadow(0 4px 8px rgba(15,23,42,.16))
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;overflow:hidden}
+    body{font:14px/1.6 var(--font);color:var(--text);background:var(--bg-void)}
+    button,input,select,textarea{font:inherit}
+    button{color:inherit}
+    .app-root{height:100dvh;display:flex;flex-direction:column;position:relative;isolation:isolate;background:
+      radial-gradient(ellipse at 12% 0%,var(--accent-glow),transparent 34%),
+      radial-gradient(ellipse at 88% 100%,var(--violet-dim),transparent 38%),var(--bg-void)}
+    .sprite{position:absolute;width:0;height:0;overflow:hidden}
+    .i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+    .topbar{height:48px;padding:0 16px;display:flex;align-items:center;gap:0;background:var(--bg-deep);
+      border-bottom:1px solid var(--border);flex:none;z-index:40}
+    .brand{display:flex;align-items:center;gap:8px;margin-right:24px;white-space:nowrap}
+    .brand-mark{width:23px;height:23px}.brand-name{font-size:15px;font-weight:750;letter-spacing:-.2px}.brand-name b{color:var(--accent)}
+    .primary-nav{display:flex;align-items:center;gap:2px;flex:1}
+    .nav-btn,.icon-btn,.ghost-icon{border:0;background:transparent;cursor:pointer;transition:.15s ease}
+    .nav-btn{height:32px;padding:0 16px;display:flex;align-items:center;gap:6px;border-radius:var(--radius-sm);
+      color:var(--text-2);font-size:13px}
+    .nav-btn:hover{color:var(--text);background:var(--bg-hover)}.nav-btn.active{color:var(--accent);background:var(--accent-dim)}
+    .top-actions{display:flex;align-items:center;gap:7px;position:relative}
+    .search-wrap{width:240px;height:31px;position:relative}
+    .search-wrap>.i{position:absolute;left:8px;top:8px;width:14px;height:14px;color:var(--text-3);pointer-events:none}
+    .global-search{width:100%;height:31px;padding:4px 30px;background:var(--bg-input);border:1px solid var(--border);
+      border-radius:var(--radius-sm);color:var(--text);font-size:12px;outline:0}
+    .global-search:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-dim)}
+    .search-kbd{position:absolute;right:8px;top:7px;color:var(--text-3);font:10px var(--mono);pointer-events:none}
+    .icon-btn{width:32px;height:32px;border-radius:var(--radius-sm);display:grid;place-items:center;color:var(--text-2)}
+    .icon-btn:hover{background:var(--bg-hover);color:var(--text)}
+    .search-panel{position:absolute;right:70px;top:38px;width:min(440px,calc(100vw - 28px));max-height:430px;
+      background:rgba(15,22,38,.97);border:1px solid var(--border-strong);border-radius:9px;
+      box-shadow:0 24px 70px rgba(0,0,0,.48);overflow:hidden;z-index:300;backdrop-filter:blur(16px)}
+    [data-theme="light"] .search-panel{background:rgba(255,255,255,.97)}
+    .search-head{padding:10px 13px;color:var(--text-3);font-size:11px;border-bottom:1px solid var(--border)}
+    .search-results{max-height:370px;overflow:auto;padding:6px}
+    .search-group-title{padding:7px 8px 3px;color:var(--text-3);font-size:10px;text-transform:uppercase;letter-spacing:.08em}
+    .search-result{width:100%;display:flex;align-items:center;gap:10px;padding:9px;border:0;border-radius:6px;background:transparent;
+      cursor:pointer;text-align:left}.search-result:hover{background:var(--bg-hover)}
+    .search-result-icon{width:27px;height:27px;border-radius:6px;display:grid;place-items:center;background:var(--accent-dim);color:var(--accent)}
+    .search-result-main{min-width:0;flex:1}.search-result-title{display:block;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .search-result-meta{display:block;font-size:10px;color:var(--text-3)}.search-result-snippet{display:-webkit-box;margin-top:3px;overflow:hidden;color:var(--text-2);font-size:10px;line-height:1.45;-webkit-line-clamp:2;-webkit-box-orient:vertical}.search-empty{padding:42px 20px;text-align:center;color:var(--text-3);font-size:12px}
+    .main-content{flex:1;min-height:0;display:grid;grid-template-columns:minmax(250px,28%) 3px minmax(0,1fr);padding:8px}
+    .sidebar,.workspace{min-width:0;min-height:0}.splitter{margin-block:-8px;background:var(--border);cursor:col-resize}
+    .splitter:hover{background:var(--accent)}
+    .panel{height:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+    .panel-head{min-height:47px;padding:9px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+    .panel-head h2{font-size:13px;font-weight:650}.panel-head-spacer{flex:1}
+    .panel-body{min-height:0}.view{height:100%;display:none}.view.active{display:block}
+    .btn{height:32px;padding:0 13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:var(--radius-sm);
+      border:1px solid var(--border);background:var(--bg-card);color:var(--text);cursor:pointer;white-space:nowrap;transition:.15s}
+    .btn:hover{border-color:var(--border-strong);background:var(--bg-hover)}.btn:disabled{opacity:.42;cursor:not-allowed}
+    .btn-sm{height:28px;padding-inline:10px;font-size:12px}.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+    .btn-primary:hover{background:color-mix(in srgb,var(--accent) 88%,white);border-color:transparent}.btn-danger{color:var(--rose);border-color:var(--rose-dim)}
+    .btn-danger:hover{background:var(--rose-dim)}.btn-text{height:auto;padding:0;border:0;background:transparent;color:var(--accent);cursor:pointer}
+    input[type="text"],input[type="password"],input[type="search"],input[type="number"],select,textarea{
+      width:100%;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);
+      color:var(--text);padding:8px 10px;font-size:13px;outline:0}
+    input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-dim)}
+    textarea{resize:vertical;line-height:1.55}.field{margin-bottom:13px}.field label{display:block;color:var(--text-2);font-size:12px;font-weight:550;margin-bottom:5px}
+    .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hint{margin-top:4px;color:var(--text-3);font-size:11px}
+    .tag{display:inline-flex;align-items:center;gap:4px;border-radius:9px;padding:2px 7px;font-size:10px;line-height:1.4;font-weight:600}
+    .cyan{color:var(--accent);background:var(--accent-dim)}.green{color:var(--emerald);background:var(--emerald-dim)}
+    .amber{color:var(--warm);background:var(--warm-dim)}.violet{color:var(--violet);background:var(--violet-dim)}
+    .rose{color:var(--rose);background:var(--rose-dim)}
+    .empty{height:100%;display:grid;place-content:center;justify-items:center;text-align:center;color:var(--text-3);padding:30px}
+    .empty .i{width:40px;height:40px;opacity:.3;margin-bottom:10px}.empty h3{color:var(--text);font-size:15px;margin-bottom:5px}
+    .spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.18);border-top-color:currentColor;border-radius:50%;animation:spin .65s linear infinite}
+    @keyframes spin{to{transform:rotate(1turn)}}@keyframes toast-in{from{opacity:0;transform:translateX(18px)}}
 
-/* ===== Header ===== */
-.header{
-  height:48px;background:linear-gradient(135deg,var(--ink) 0%,#173447 100%);
-  color:#fff;display:flex;align-items:center;padding:0 16px;
-  box-shadow:0 2px 8px rgba(0,0,0,.12);position:relative;z-index:100;
-}
-.logo{font-size:18px;font-weight:700;letter-spacing:1px;margin-right:20px;white-space:nowrap;}
-.logo span{color:#52d2c2;}
-.legend{display:flex;gap:8px;align-items:center;flex:1;min-width:0;}
-.legend-item{
-  display:flex;align-items:center;gap:5px;cursor:pointer;
-  padding:3px 10px;border-radius:4px;transition:background .2s;
-  font-size:12px;white-space:nowrap;overflow:hidden;
-}
-.legend-item:hover{background:rgba(255,255,255,.15);}
-.legend-item.dim{opacity:.4;}
-.legend-item.active{background:rgba(255,255,255,.2);}
-.legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
-.header-ver{font-size:11px;opacity:.7;white-space:nowrap;margin-left:12px;}
+    /* documents */
+    .doc-side{display:flex;flex-direction:column}.project-row{width:100%;display:flex;align-items:center;gap:7px}
+    .project-label{font-size:11px;color:var(--text-3)}.project-select{height:30px;padding:3px 8px;min-width:0;flex:1}
+    .doc-list{padding:8px;overflow:auto;list-style:none;height:calc(100% - 47px)}
+    .doc-item{position:relative;display:flex;gap:9px;padding:10px 8px;border:1px solid transparent;border-radius:6px;cursor:pointer;margin-bottom:3px}
+    .doc-item:hover{background:var(--bg-hover)}.doc-item.active{background:var(--accent-dim);border-color:rgba(6,182,212,.14);box-shadow:inset 2px 0 var(--accent)}
+    .doc-icon{color:var(--rose);padding-top:1px}.doc-info{min-width:0;flex:1}.doc-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:570}
+    .doc-meta{display:flex;align-items:center;gap:7px;margin-top:5px;color:var(--text-3);font-size:10px}.doc-del{opacity:0;width:26px;height:26px}
+    .doc-item:hover .doc-del,.doc-item:focus-within .doc-del{opacity:1}.progress{height:3px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:7px}
+    .progress>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--violet));transition:width .3s}
+    .editor{height:100%;display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+    .editor-title{height:48px;padding:0 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);flex:none}
+    .editor-title h2{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.editor-title .doc-icon{padding:0}
+    .editor-meta{margin-left:auto;display:flex;align-items:center;gap:8px}.file-size{font:10px var(--mono);color:var(--text-3)}
+    .view-toggle{display:flex;background:var(--bg-input);padding:2px;border-radius:5px}
+    .view-toggle button{height:24px;padding:0 9px;border:0;border-radius:4px;background:transparent;color:var(--text-3);font-size:11px;cursor:pointer}
+    .view-toggle button.active{background:var(--accent);color:#fff}.editor-content{flex:1;min-height:0;background:#0b1020;position:relative}
+    [data-theme="light"] .editor-content{background:#e9e6e1}.pdf-frame{width:100%;height:100%;border:0;background:#3b3b3b}
+    .text-preview{height:100%;overflow:auto;padding:34px clamp(25px,6vw,80px);background:var(--bg-card)}
+    .text-paper{max-width:820px;margin:auto}.text-kicker{font:11px var(--mono);color:var(--accent);margin-bottom:10px}
+    .text-paper h1{font-size:25px;line-height:1.35;margin-bottom:12px}.text-paper>p{color:var(--text-2);margin-bottom:24px}
+    .text-paper h2{font-size:13px;margin:20px 0 10px}.extract-list{display:grid;gap:6px;list-style:none}
+    .extract-list li{padding:9px 11px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text-2);font-size:12px}
+    .entity-cloud{display:flex;flex-wrap:wrap;gap:7px}
 
-/* ===== Main Layout ===== */
-.main{display:flex;height:calc(100% - 48px);position:relative;}
+    /* graph */
+    .graph-side{display:flex;flex-direction:column}.tree-title{display:flex;align-items:center;gap:7px}.count{margin-left:auto;padding:1px 7px;border-radius:9px;background:var(--bg-input);color:var(--text-3);font:10px var(--mono)}
+    .tree-search{margin:8px;position:relative}.tree-search .i{position:absolute;left:9px;top:9px;width:13px;height:13px;color:var(--text-3)}
+    .tree-search input{height:32px;padding-left:29px;font-size:11px}.tree-body{overflow:auto;flex:1;padding:0 6px 8px}
+    .tree-doc-head,.tree-node{width:100%;border:0;background:transparent;display:flex;align-items:center;text-align:left;cursor:pointer;color:var(--text-2)}
+    .tree-doc-head{height:34px;padding:0 7px;gap:6px;border-radius:5px;font-size:11px}.tree-doc-head:hover,.tree-node:hover{background:var(--bg-hover)}
+    .tree-doc-head strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;flex:1}.tree-caret{transition:transform .15s}.tree-caret.closed{transform:rotate(-90deg)}
+    .tree-dot{width:7px;height:7px;border-radius:50%;box-shadow:0 0 7px currentColor}.tree-kids{padding-left:15px}.tree-node{height:28px;border-radius:4px;padding:0 6px;gap:7px;font-size:10.5px}
+    .tree-node.active{color:var(--accent);background:var(--accent-dim)}.tree-bar{width:3px;height:14px;border-radius:2px;flex:none}.tree-node span:nth-child(2){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+    .graph-view{height:100%;display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+    .graph-toolbar{min-height:126px;padding:10px 12px;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--border);flex:none}
+    .toolbar-left{display:flex;align-items:center;align-content:center;gap:7px;flex-wrap:wrap;min-width:0}.doc-picker{width:180px;align-self:stretch}
+    .doc-picker label{display:block;color:var(--text-3);font-size:10px;margin-bottom:3px}.doc-picker select{height:51px;padding:3px 7px;font-size:10px}
+    .tool-sep{height:24px;width:1px;background:var(--border);margin:0 2px}.toolbar-right{margin-left:auto;display:flex;align-items:center;gap:7px;align-self:flex-start}
+    .stat-chip,.zoom-controls{height:28px;display:flex;align-items:center;gap:5px;padding:0 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:14px;font-size:10px;color:var(--text-3)}
+    .stat-dot{width:6px;height:6px;border-radius:50%}.stat-dot.node{background:var(--accent);box-shadow:0 0 7px var(--accent)}.stat-dot.edge{background:var(--violet);box-shadow:0 0 7px var(--violet)}
+    .zoom-controls{border-radius:5px;gap:2px}.zoom-btn{width:23px;height:23px;border:0;background:transparent;color:var(--text-2);cursor:pointer;display:grid;place-items:center;border-radius:3px}
+    .zoom-btn:hover{background:var(--bg-hover);color:var(--text)}.zoom-level{min-width:36px;text-align:center;font:10px var(--mono)}
+    .graph-canvas{position:relative;flex:1;min-height:0;background:
+      radial-gradient(circle at 50% 50%,rgba(6,182,212,.035),transparent 45%),var(--bg-void);overflow:hidden}
+    .graph-canvas:before{content:"";position:absolute;inset:0;background-image:radial-gradient(var(--border-strong) .6px,transparent .6px);background-size:22px 22px;opacity:.18;pointer-events:none}
+    .graph-svg{width:100%;height:100%;display:block;position:relative}.g-link{stroke:var(--text-3);stroke-opacity:.25}.g-link.cross{stroke:var(--warm);stroke-dasharray:5 4;stroke-opacity:.38}
+    .g-node{cursor:pointer}.g-node rect{filter:drop-shadow(0 4px 8px rgba(0,0,0,.25));transition:stroke-width .15s}.g-node:hover rect,.g-node.selected rect{stroke:#fff;stroke-width:2.5}
+    .g-node text{fill:#f8fafc;font-family:var(--font);font-size:10px;pointer-events:none}.g-node.entity text{font-size:9px}.g-node .expand-dot{fill:#334155;stroke:#64748b;stroke-width:1}
+    .g-node .expand-glyph{font-size:9px}.g-link.idea{stroke:var(--rose);stroke-dasharray:3 4;stroke-opacity:.72}.g-node.selected rect{stroke:#fff!important;stroke-width:3.5!important;filter:drop-shadow(0 0 10px rgba(255,255,255,.28)) drop-shadow(0 4px 8px rgba(0,0,0,.25))}.g-node.related rect{filter:drop-shadow(0 0 7px rgba(255,255,255,.12)) drop-shadow(0 4px 8px rgba(0,0,0,.25))}.graph-tip{position:absolute;left:12px;bottom:10px;color:var(--text-3);font-size:10px;background:rgba(10,14,26,.84);border:1px solid var(--border);border-radius:5px;padding:5px 8px;pointer-events:none}
+    [data-theme="light"] .graph-tip{background:rgba(255,255,255,.88)}
+    .graph-legend{position:absolute;left:12px;top:12px;width:205px;padding:12px;background:rgba(15,22,38,.94);border:1px solid var(--border-strong);border-radius:7px;box-shadow:0 14px 36px rgba(0,0,0,.28);backdrop-filter:blur(12px);font-size:10px}
+    [data-theme="light"] .graph-legend{background:rgba(255,255,255,.94)}.legend-close{float:right;border:0;background:transparent;color:var(--text-3);cursor:pointer}
+    .legend-title{font-weight:650;font-size:11px;margin-bottom:8px}.legend-row{display:flex;align-items:center;gap:7px;color:var(--text-2);margin:6px 0}.legend-swatch{width:18px;height:9px;border-radius:3px}
+    .graph-tooltip{position:absolute;max-width:260px;padding:9px 11px;background:#080d18;border:1px solid var(--border-strong);border-radius:6px;color:var(--text);font-size:11px;box-shadow:0 12px 30px rgba(0,0,0,.4);pointer-events:none;z-index:5}
+    .graph-tooltip small{display:block;color:var(--text-3);margin-top:4px}.build-progress{position:absolute;inset:0;display:grid;place-items:center;background:rgba(10,14,26,.8);z-index:8;backdrop-filter:blur(5px)}
+    .build-card{width:min(420px,calc(100% - 30px));padding:23px;border:1px solid var(--border-strong);border-radius:9px;background:var(--bg-card);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+    .build-title{display:flex;align-items:center;gap:9px;font-weight:650}.build-meta{display:flex;justify-content:space-between;color:var(--text-3);font-size:11px;margin:13px 0 7px}
+    .context-menu{position:fixed;width:145px;padding:5px;background:var(--bg-deep);border:1px solid var(--border-strong);border-radius:7px;box-shadow:0 15px 40px rgba(0,0,0,.4);z-index:500}
+    .context-menu button{width:100%;height:31px;border:0;border-radius:4px;background:transparent;color:var(--text-2);text-align:left;padding:0 9px;cursor:pointer}.context-menu button:hover{background:var(--bg-hover);color:var(--text)}.context-menu button.danger{color:var(--rose)}
 
-/* ===== Tree Panel ===== */
-.tree-panel{
-  width:240px;min-width:180px;background:var(--surface);border-right:1px solid var(--line);
-  overflow-y:auto;overflow-x:hidden;font-size:13px;flex-shrink:0;
-}
-.tree-hd{
-  padding:10px 14px;font-weight:700;color:var(--ink);border-bottom:1px solid var(--line);
-  font-size:13px;background:var(--paper);position:sticky;top:0;z-index:10;
-}
-.tn{cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden;}
-.tn-c{
-  display:flex;align-items:center;padding:4px 6px;border-radius:3px;
-  margin:1px 4px;transition:background .15s;
-}
-.tn-c:hover{background:var(--teal-soft);}
-.tn-c.sel{background:#c5e7df;}
-.tn-arrow{
-  width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;
-  flex-shrink:0;transition:transform .2s;
-}
-.tn-arrow::before{
-  content:'';border-left:4px solid #718096;border-top:3px solid transparent;
-  border-bottom:3px solid transparent;transition:border-color .2s;
-}
-.tn-arrow.exp{transform:rotate(90deg);}
-.tn-arrow.exp::before{border-left-color:var(--teal);}
-.tn-arrow.hidden{visibility:hidden;}
-.tn-icon{
-  width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;
-  margin-right:5px;flex-shrink:0;
-}
-.tn-icon .idoc{width:10px;height:11px;background:currentColor;border-radius:1.5px;}
-.tn-icon .ich{width:8px;height:8px;background:currentColor;border-radius:50%;}
-.tn-icon .ient{width:6px;height:6px;background:currentColor;border-radius:50%;}
-.tn-label{overflow:hidden;text-overflow:ellipsis;flex:1;font-size:12.5px;color:var(--text);}
-.tn-children{display:none;}
-.tn-children.show{display:block;}
+    /* ideas */
+    .idea-side{display:flex;flex-direction:column}.idea-cards{padding:8px;overflow:auto;flex:1}.idea-card{padding:10px 11px;border:1px solid var(--border);border-radius:6px;background:rgba(255,255,255,.012);cursor:pointer;margin-bottom:7px}
+    .idea-card:hover{border-color:var(--border-strong)}.idea-card.active{border-color:var(--accent);background:var(--accent-dim);box-shadow:inset 0 0 0 1px rgba(6,182,212,.12)}
+    .idea-card h3{font-size:12px;margin-bottom:5px}.idea-card p{color:var(--text-2);font-size:10.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .idea-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.idea-editor{height:100%;display:flex;flex-direction:column}
+    .idea-form{padding:14px;overflow:auto}.idea-form textarea{min-height:220px}.form-actions{display:flex;gap:8px}.linked-node{display:flex;align-items:center;gap:7px;padding:8px 10px;margin-bottom:12px;border:1px solid var(--accent-dim);background:var(--accent-dim);border-radius:5px;color:var(--accent);font-size:11px}.idea-toggle{display:flex;align-items:flex-start;gap:10px;padding:11px 12px;margin-bottom:13px;border:1px solid var(--border);border-radius:7px;background:var(--bg-input);cursor:pointer}.idea-toggle input{width:16px;height:16px;margin-top:2px;accent-color:var(--rose)}.idea-toggle span{display:flex;flex-direction:column;gap:2px}.idea-toggle strong{font-size:12px;color:var(--text)}.idea-toggle small{font-size:10px;color:var(--text-3)}.pdf-shell{height:100%;display:flex;flex-direction:column}.pdf-toolbar{height:38px;padding:0 10px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);background:var(--bg-deep);flex:none}.pdf-toolbar-label{min-width:0;flex:1;color:var(--text-3);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pdf-toolbar button{height:25px;padding:0 8px;font-size:10px}.pdf-object{width:100%;flex:1;min-height:0;border:0;background:#3b3b3b}.pdf-fallback{height:100%;display:grid;place-content:center;justify-items:center;gap:10px;padding:28px;text-align:center;color:var(--text-2);background:var(--bg-card)}.pdf-fallback strong{color:var(--text);font-size:14px}.pdf-fallback-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 
-/* ===== Resizer ===== */
-.resizer{width:4px;cursor:col-resize;background:transparent;transition:background .2s;z-index:50;flex-shrink:0;}
-.resizer:hover,.resizer.drag{background:var(--teal-2);}
-
-/* ===== Graph Panel ===== */
-.graph-panel{flex:1;position:relative;background:var(--surface);overflow:hidden;min-width:250px;}
-.graph-panel svg{width:100%;height:100%;display:block;}
-.graph-tip{
-  position:absolute;bottom:10px;left:10px;background:rgba(255,253,248,.94);
-  padding:6px 12px;border:1px solid var(--line);border-radius:7px;font-size:11px;color:var(--muted);
-  box-shadow:0 1px 4px rgba(0,0,0,.08);pointer-events:none;line-height:1.6;
-}
-.tooltip{
-  position:absolute;background:rgba(12,25,39,.96);color:#fff;padding:7px 11px;
-  border-radius:5px;font-size:11.5px;pointer-events:none;opacity:0;
-  transition:opacity .15s;z-index:200;max-width:240px;line-height:1.5;
-  box-shadow:0 2px 8px rgba(0,0,0,.2);
-}
-
-/* ===== PDF Panel ===== */
-.pdf-panel{
-  width:360px;min-width:260px;background:var(--paper-2);overflow-y:auto;
-  padding:16px 12px;border-left:1px solid var(--line);flex-shrink:0;
-}
-.pdf-page{
-  width:100%;max-width:336px;margin:0 auto 16px auto;background:var(--surface);
-  box-shadow:0 2px 10px rgba(12,25,39,.10);border:1px solid var(--line);
-  padding:32px 30px 24px;
-}
-.pdf-hd{
-  font-size:8.5px;color:#a0aec0;border-bottom:.5px solid #e2e8f0;
-  padding-bottom:5px;text-align:center;margin-bottom:14px;
-}
-.pdf-ft{
-  font-size:9.5px;color:#a0aec0;border-top:.5px solid #e2e8f0;
-  padding-top:6px;text-align:center;margin-top:16px;
-}
-.pdf-title{
-  font-family:"SimHei","Microsoft YaHei",sans-serif;font-size:16px;font-weight:700;
-  text-align:center;margin-bottom:12px;color:#1a202c;line-height:1.4;
-}
-.pdf-auth{font-size:10.5px;text-align:center;color:#4a5568;margin-bottom:4px;}
-.pdf-aff{font-size:8.5px;text-align:center;color:#718096;margin-bottom:14px;}
-.pdf-abs-lbl{
-  font-family:"SimHei","Microsoft YaHei",sans-serif;font-size:10.5px;
-  font-weight:700;margin-bottom:5px;color:#1a202c;
-}
-.pdf-abs{
-  font-family:"SimSun","Songti SC",serif;font-size:9.5px;line-height:1.8;
-  text-align:justify;text-indent:2em;color:#2d3748;margin-bottom:8px;
-}
-.pdf-kw{font-family:"SimSun","Songti SC",serif;font-size:9px;color:#2d3748;margin-top:6px;}
-.pdf-kw b{font-family:"SimHei","Microsoft YaHei",sans-serif;}
-.pdf-sec{
-  font-family:"SimHei","Microsoft YaHei",sans-serif;font-size:12px;font-weight:700;
-  color:#1a202c;margin:12px 0 6px;
-}
-.pdf-sub{
-  font-family:"SimHei","Microsoft YaHei",sans-serif;font-size:10.5px;font-weight:700;
-  color:#2d3748;margin:8px 0 5px;
-}
-.pdf-body{
-  font-family:"SimSun","Songti SC",serif;font-size:9.5px;line-height:1.8;
-  text-align:justify;text-indent:2em;color:#2d3748;margin-bottom:5px;
-}
-.ent{background:#dceee9;padding:0 2px;border-radius:2px;cursor:pointer;transition:background .15s;}
-.ent:hover{background:#b8ddd4;}
-.ent.hl{background:var(--teal);color:#fff;}
-.ref{font-size:7px;vertical-align:super;color:var(--teal);}
-
-/* ===== Scrollbar ===== */
-::-webkit-scrollbar{width:6px;height:6px;}
-::-webkit-scrollbar-track{background:transparent;}
-::-webkit-scrollbar-thumb{background:#cbd5e0;border-radius:3px;}
-::-webkit-scrollbar-thumb:hover{background:#a0aec0;}
-
-/* ===== SVG Node Styles ===== */
-.link{stroke:#cbd5e0;stroke-opacity:.5;fill:none;transition:stroke-opacity.2s;}
-.link.dim{stroke-opacity:.15;}
-.link.hl{stroke:var(--teal-2);stroke-opacity:1;stroke-width:2.5;}
-.link.cross{stroke:var(--amber);stroke-opacity:.5;stroke-dasharray:4,3;}
-.link.cross.hl{stroke:var(--amber);stroke-opacity:1;stroke-width:2;}
-.node-doc rect{stroke-width:2px;cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.15));}
-.node-ch circle{stroke-width:2px;stroke:#fff;cursor:pointer;}
-.node-ent circle{stroke-width:1px;stroke:#fff;cursor:pointer;}
-.nlabel{
-  font-size:10.5px;pointer-events:none;fill:#2d3748;
-  font-family:"Microsoft YaHei",sans-serif;text-anchor:middle;
-}
-.node-doc .nlabel{font-size:11px;font-weight:600;fill:#1a202c;}
-@media(max-width:820px){
-  .header{height:44px;padding:0 10px;}
-  .logo{font-size:15px;margin-right:10px;}
-  .legend{gap:3px;overflow-x:auto;scrollbar-width:none;}
-  .legend::-webkit-scrollbar{display:none;}
-  .legend-item{padding:3px 7px;font-size:10px;}
-  .header-ver{display:none;}
-  .main{height:calc(100% - 44px);}
-  .tree-panel,.pdf-panel,.resizer{display:none;}
-  .graph-panel{min-width:0;width:100%;}
-  .graph-tip{left:8px;right:8px;bottom:8px;text-align:center;font-size:10px;}
-}
-</style>
+    /* overlays */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.64);display:grid;place-items:center;z-index:700;backdrop-filter:blur(8px)}
+    .settings-modal{width:min(1000px,calc(100vw - 36px));height:min(672px,calc(100dvh - 36px));background:var(--bg-void);border:1px solid var(--border-strong);border-radius:9px;overflow:hidden;box-shadow:0 25px 90px rgba(0,0,0,.56)}
+    .settings-head{height:61px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--border);background:var(--bg-card)}
+    .settings-head h2{display:flex;align-items:center;gap:8px;font-size:14px}.settings-head .icon-btn{margin-left:auto}
+    .settings-body{height:calc(100% - 61px);display:grid;grid-template-columns:200px 1fr}.settings-nav{padding:14px 8px;background:var(--bg-card);border-right:1px solid var(--border)}
+    .settings-tab{height:39px;width:100%;display:flex;align-items:center;gap:9px;padding:0 11px;border:0;border-radius:5px;background:transparent;color:var(--text-2);cursor:pointer;text-align:left}
+    .settings-tab:hover{background:var(--bg-hover);color:var(--text)}.settings-tab.active{background:var(--accent-dim);color:var(--accent)}.settings-tab .count{margin-left:auto}
+    .settings-content{padding:18px 22px;overflow:auto}.settings-page{display:none}.settings-page.active{display:block}
+    .settings-card{border:1px solid var(--border);border-radius:8px;background:var(--bg-card);overflow:hidden}.settings-card-head{min-height:45px;padding:0 14px;border-bottom:1px solid var(--border);display:flex;align-items:center}
+    .settings-card-head h3{font-size:13px}.settings-card-head>*:last-child:not(:first-child){margin-left:auto}.settings-card-body{padding:14px}
+    .prompt-grid{display:grid;grid-template-columns:245px minmax(0,1fr);gap:12px;height:100%}.prompt-list{border:1px solid var(--border);border-radius:8px;background:var(--bg-card);overflow:hidden}
+    .prompt-list-head{height:47px;padding:0 12px;display:flex;align-items:center;border-bottom:1px solid var(--border)}.prompt-list-head h3{font-size:13px}.prompt-tasks{padding:6px;max-height:470px;overflow:auto}
+    .prompt-task{width:100%;padding:8px;border:0;border-radius:5px;background:transparent;color:var(--text-2);cursor:pointer;text-align:left}.prompt-task:hover{background:var(--bg-hover)}.prompt-task.active{background:var(--accent-dim);color:var(--text)}
+    .prompt-task strong{display:block;font-size:11px}.prompt-task small{display:block;font-size:9.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+    .prompt-editor textarea{min-height:105px;font:11px/1.55 var(--mono)}.vars{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:8px;background:var(--bg-input);border-radius:5px;margin-bottom:12px;color:var(--text-3);font-size:10px}
+    .about{max-width:560px;margin:25px auto;text-align:center}.about-logo{width:62px;height:62px;margin:auto}.about h2{font-size:22px;margin:9px 0 2px}.about-version{color:var(--accent);font:11px var(--mono)}.about-desc{color:var(--text-2);margin:12px 0 18px}
+    .feature-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px}.feature{padding:13px 8px;border:1px solid var(--border);border-radius:7px;color:var(--text-2);font-size:10px}.feature .i{display:block;margin:0 auto 7px;color:var(--accent)}
+    .dialog{width:min(420px,calc(100vw - 30px));background:var(--bg-card);border:1px solid var(--border-strong);border-radius:9px;box-shadow:0 20px 65px rgba(0,0,0,.5);overflow:hidden}
+    .dialog-head{height:48px;padding:0 16px;display:flex;align-items:center;border-bottom:1px solid var(--border)}.dialog-head h3{font-size:14px}.dialog-head .icon-btn{margin-left:auto}
+    .dialog-body{padding:16px}.dialog-foot{padding:0 16px 15px;display:flex;justify-content:flex-end;gap:8px}.dialog-copy{color:var(--text-2);font-size:12px}
+    .node-options{max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:6px;margin-top:9px}.node-option{width:100%;display:flex;align-items:center;gap:7px;padding:8px 10px;border:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text-2);text-align:left;cursor:pointer;font-size:11px}.node-option:hover,.node-option.active{background:var(--accent-dim);color:var(--accent)}
+    .toast-container{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:1000}.toast{width:min(350px,calc(100vw - 30px));padding:10px 10px 10px 13px;border:1px solid var(--border-strong);border-radius:6px;background:var(--bg-deep);display:flex;gap:9px;align-items:flex-start;box-shadow:0 13px 35px rgba(0,0,0,.35);font-size:12px;animation:toast-in .2s ease}.toast.success{border-color:var(--emerald);color:var(--emerald)}.toast.warn{border-color:var(--warm);color:var(--warm)}.toast.error{border-color:var(--rose);color:var(--rose)}.toast span{flex:1}.toast button{border:0;background:transparent;color:inherit;cursor:pointer;font-size:17px;line-height:1}
+    .demo-mode{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:30;pointer-events:none;background:rgba(11,19,34,.9);border:1px solid var(--border);border-radius:12px;padding:3px 9px;color:var(--text-3);font:9px var(--mono);white-space:nowrap}
+    .hidden{display:none!important}:where(button,input,textarea,select,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+    ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(148,163,184,.14);border-radius:4px}::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,.25)}
+    @media(max-width:920px){.brand{margin-right:8px}.brand-name{display:none}.nav-btn{padding-inline:10px}.search-wrap{width:170px}.graph-toolbar{min-height:145px}.toolbar-right{position:absolute;right:20px}.doc-picker{width:155px}.main-content{grid-template-columns:minmax(215px,31%) 3px minmax(0,1fr)}}
+    @media(max-width:680px){.topbar{padding:0 9px}.nav-btn{padding-inline:8px}.nav-btn .i{display:none}.search-wrap{width:38px}.global-search{padding-left:29px;color:transparent}.global-search:focus{position:absolute;right:0;width:min(250px,58vw);color:var(--text);z-index:2}.search-kbd{display:none}.main-content{grid-template-columns:35% 2px 1fr;padding:5px}.editor-title{padding-inline:8px}.file-size{display:none}.graph-toolbar{min-height:170px}.toolbar-right{display:none}.settings-body{grid-template-columns:145px 1fr}.settings-content{padding:12px}.prompt-grid{grid-template-columns:1fr}.prompt-list{display:none}.feature-list{grid-template-columns:1fr}.demo-mode{display:none}}
+    @media(max-width:520px){.brand{display:none}.primary-nav{flex:none}.nav-btn{width:34px;padding:0;justify-content:center;font-size:0}.nav-btn .i{display:block}.top-actions{margin-left:auto}.top-actions>#resetBtn{display:none}.main-content{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(150px,32%) minmax(0,1fr);padding:4px}.sidebar{display:block;min-height:0}.splitter{display:none}.graph-toolbar{min-height:92px;padding:8px;overflow-x:auto}.toolbar-left{flex-wrap:nowrap;align-items:center;width:max-content}.doc-picker,.tool-sep{display:none}.graph-tip{font-size:8px;left:5px;right:5px;text-align:center}.settings-modal{width:calc(100vw - 10px);height:calc(100dvh - 10px)}.settings-body{grid-template-columns:1fr;grid-template-rows:48px minmax(0,1fr)}.settings-nav{display:flex;padding:5px;border-right:0;border-bottom:1px solid var(--border);overflow-x:auto}.settings-tab{min-width:88px;justify-content:center;padding:0 6px;font-size:11px}.settings-tab .count{display:none}.settings-content{padding:8px}.field-row{grid-template-columns:1fr}.editor-title h2{font-size:11px}.editor-meta{gap:3px}.view-toggle button{padding-inline:6px}.toast-container{left:8px;right:8px;bottom:8px}.toast{width:100%}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  </style>
 </head>
 <body>
-<div class="header">
-  <div class="logo">知源 <span>KnowSource</span></div>
-  <div class="legend" id="legend"></div>
-  <div class="header-ver">v2.2.0 Demo</div>
-</div>
-<div class="main">
-  <div class="tree-panel" id="treePanel">
-    <div class="tree-hd">文献结构导航</div>
-    <div id="treeContent"></div>
-  </div>
-  <div class="resizer" id="rz1"></div>
-  <div class="graph-panel" id="graphPanel">
-    <svg id="gsvg"></svg>
-    <div class="graph-tip">点击节点展开/折叠 · 双击跳转PDF · 滚轮缩放 · 拖拽移动</div>
-    <div class="tooltip" id="ttip"></div>
-  </div>
-  <div class="resizer" id="rz2"></div>
-  <div class="pdf-panel" id="pdfPanel"></div>
+<div id="app" class="app-root" data-theme="light">
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></symbol>
+    <symbol id="i-graph" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11l-5 6M12 11l5 6"/></symbol>
+    <symbol id="i-idea" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1A2 2 0 1 1 4.4 17l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1A2 2 0 1 1 7 4.4l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1A2 2 0 1 1 19.6 7l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1h.3a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-10 12h9l-1 8 10-12h-9z"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+    <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M10 14H4v6M14 10h6V4M4 20l7-7M20 4l-7 7"/></symbol>
+    <symbol id="i-legend" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h4M7 12h4M7 16h4"/><circle cx="16" cy="8" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="16" cy="16" r="1"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M11 4H4v16h16v-7"/><path d="m18.5 2.5 3 3L12 15l-4 1 1-4z"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand" aria-label="知源 KnowSource">
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none"><path d="M12 2 2 7v10l10 5 10-5V7z" stroke="url(#brand-grad)" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="url(#brand-grad)"/><defs><linearGradient id="brand-grad"><stop stop-color="#06b6d4"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg>
+      <span class="brand-name"><b>知源</b> KnowSource</span>
+    </div>
+    <nav class="primary-nav" aria-label="主要视图">
+      <button class="nav-btn active" data-view="documents" title="文献 Ctrl+1"><svg class="i"><use href="#i-doc"/></svg>文献</button>
+      <button class="nav-btn" data-view="graph" title="图谱 Ctrl+2"><svg class="i"><use href="#i-graph"/></svg>图谱</button>
+      <button class="nav-btn" data-view="idea" title="灵感 Ctrl+3"><svg class="i"><use href="#i-idea"/></svg>灵感</button>
+    </nav>
+    <div class="top-actions">
+      <div class="search-wrap" role="search">
+        <svg class="i"><use href="#i-search"/></svg>
+        <input id="globalSearch" class="global-search" type="search" placeholder="搜索知识...">
+        <span class="search-kbd">Ctrl+K</span>
+      </div>
+      <div id="searchPanel" class="search-panel hidden"></div>
+      <button id="settingsBtn" class="icon-btn" title="设置"><svg class="i"><use href="#i-settings"/></svg></button>
+      <button id="resetBtn" class="icon-btn" title="重置体验"><svg class="i"><use href="#i-reset"/></svg></button>
+      <button id="themeBtn" class="icon-btn" title="切换主题"><svg class="i"><use href="#i-sun"/></svg></button>
+    </div>
+  </header>
+
+  <main class="main-content">
+    <aside id="sidebar" class="sidebar"></aside>
+    <div id="splitter" class="splitter" aria-hidden="true"></div>
+    <section id="workspace" class="workspace">
+      <div id="documentsView" class="view active"></div>
+      <div id="graphView" class="view"></div>
+      <div id="ideaView" class="view"></div>
+    </section>
+  </main>
+
+  <input id="fileInput" class="hidden" type="file" multiple accept=".pdf,.md,.txt,.json">
+  <div id="settingsOverlay" class="hidden"></div>
+  <div id="dialogOverlay" class="hidden"></div>
+  <div id="contextMenu" class="context-menu hidden"></div>
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+  <div class="demo-mode">PRODUCT DEMO · 人工校准知识图谱</div>
 </div>
 
 <script>
-// ============ DATA ============
-const COLORS={doc1:'#118779',doc2:'#3f6f8e',doc3:'#c47b18'};
-const DOCNAMES={doc1:'注意力机制研究进展',doc2:'图卷积神经网络综述',doc3:'预训练语言模型综述'};
-const DOCSHORT={doc1:'注意力机制',doc2:'图卷积网络',doc3:'预训练模型'};
-const ENTCOLORS={model:'#4f6fa8',method:'#118779',other:'#7c7062'};
-
-const MODEL_SET=new Set(['Transformer','BERT','GPT','GPT-2','GPT-3','LSTM','Encoder-Decoder','GCN','GAT','GATv2',
-  'ChebNet','GraphSAGE','STN','SENet','CBAM','ViT','ELMo','RoBERTa','ALBERT','SpanBERT','ERNIE','XLNet',
-  'GCMC','NGCF','LightGCN','STGCN','DCRNN','GRU','循环神经网络','卷积神经网络','图神经网络','图卷积神经网络',
-  '预训练语言模型','AGNN']);
-const METHOD_SET=new Set(['注意力机制','自注意力','多头注意力','软注意力','硬注意力','卷积','池化','图池化',
-  '谱方法','空间方法','Softmax','反向传播','强化学习','拉普拉斯矩阵','掩码语言模型','语言模型',
-  '知识蒸馏','微调','自监督学习','深度学习','机器翻译','文本摘要','命名实体识别']);
-function entType(n){
-  if(MODEL_SET.has(n))return 'model';
-  if(METHOD_SET.has(n))return 'method';
-  if(/Net|BERT|GPT|LSTM|Transformer/i.test(n))return 'model';
-  return 'method';
-}
-function entColor(n){return ENTCOLORS[entType(n)]||ENTCOLORS.other;}
-
-// ---- Paper 1 ----
-const P1={
-  id:'doc1',title:'注意力机制在深度学习中的研究进展',
-  authors:'朱张莉，饶元，吴渊，祁伟豪',aff:'西安交通大学软件学院',
-  journal:'中文信息学报',year:'2019',vol:'33(6):1-11',
-  abs:'注意力机制逐渐成为目前深度学习领域的主流方法和研究热点之一，它通过改进源语言表达方式，在解码中动态选择源语言相关信息，从而极大改善了经典Encoder-Decoder框架的不足。本文对近年来注意力机制在深度学习中的研究进展进行综述，首先介绍注意力机制的基本原理和发展历程；然后将现有注意力机制分为软注意力、硬注意力、自注意力、多头注意力等类型；接着总结在NLP、CV、语音等领域的应用；最后讨论挑战与展望。',
-  kw:['深度学习','注意力机制','Encoder-Decoder','自注意力','多头注意力'],
-  pages:[
-    {hd:'中文信息学报 2019年第33卷第6期',
-     cnt:`<div class="pdf-title">注意力机制在深度学习中的研究进展</div>
-       <div class="pdf-auth">朱张莉，饶元，吴渊，祁伟豪</div>
-       <div class="pdf-aff">（西安交通大学 软件学院，陕西 西安 710049）</div>
-       <div class="pdf-abs-lbl">摘 要</div>
-       <div class="pdf-abs">注意力机制逐渐成为目前<span class="ent" data-e="深度学习">深度学习</span>领域的主流方法和研究热点之一，它通过改进源语言表达方式，在解码中动态选择源语言相关信息，从而极大改善了经典<span class="ent" data-e="Encoder-Decoder">Encoder-Decoder</span>框架的不足。本文对近年来注意力机制的研究进展进行综述，介绍其基本原理，将现有方法分为<span class="ent" data-e="软注意力">软注意力</span>、<span class="ent" data-e="硬注意力">硬注意力</span>、<span class="ent" data-e="自注意力">自注意力</span>、<span class="ent" data-e="多头注意力">多头注意力</span>等类型，总结典型应用，讨论挑战与展望。</div>
-       <div class="pdf-kw"><b>关键词：</b><span class="ent" data-e="深度学习">深度学习</span>；<span class="ent" data-e="注意力机制">注意力机制</span>；<span class="ent" data-e="Encoder-Decoder">Encoder-Decoder</span>；<span class="ent" data-e="自注意力">自注意力</span>；<span class="ent" data-e="多头注意力">多头注意力</span></div>`},
-    {hd:'朱张莉等：注意力机制在深度学习中的研究进展',
-     cnt:`<div class="pdf-sec">1 引言</div>
-       <div class="pdf-body">随着<span class="ent" data-e="深度学习">深度学习</span>技术的飞速发展，神经网络模型在计算机视觉、自然语言处理、语音识别等领域取得了显著突破。然而，传统神经网络在处理序列数据时面临信息过载和长距离依赖建模困难等问题。受人类视觉注意力机制启发，研究人员将<span class="ent" data-e="注意力机制">注意力机制</span>引入深度学习模型中，通过动态选择重要信息、抑制无关信息，有效提升了模型性能<span class="ref">[1]</span>。</div>
-       <div class="pdf-body">2014年，Bahdanau等人<span class="ref">[2]</span>首次将注意力机制应用于<span class="ent" data-e="机器翻译">机器翻译</span>任务，提出基于注意力的<span class="ent" data-e="Encoder-Decoder">Encoder-Decoder</span>模型。2017年，Vaswani等人<span class="ref">[3]</span>提出<span class="ent" data-e="Transformer">Transformer</span>模型，完全基于<span class="ent" data-e="自注意力">自注意力</span>机制构建，摒弃了传统的<span class="ent" data-e="循环神经网络">循环神经网络</span>和<span class="ent" data-e="卷积神经网络">卷积神经网络</span>，在机器翻译任务上取得了当时最优结果。后续的<span class="ent" data-e="BERT">BERT</span>、<span class="ent" data-e="GPT">GPT</span>等预训练语言模型均以Transformer为基础架构。</div>
-       <div class="pdf-sub">1.1 注意力机制的认知基础</div>
-       <div class="pdf-body">注意力机制的灵感来源于人类视觉注意系统。人类视觉系统能够快速扫描全局图像，获得需要重点关注的目标区域，即注意力焦点，而后对该区域投入更多注意力资源。深度学习中的注意力机制本质上是一种资源分配机制，将计算资源根据信息重要程度重新分配。</div>`},
-    {hd:'朱张莉等：注意力机制在深度学习中的研究进展',
-     cnt:`<div class="pdf-sec">2 注意力机制基本原理</div>
-       <div class="pdf-sub">2.1 通用框架</div>
-       <div class="pdf-body"><span class="ent" data-e="注意力机制">注意力机制</span>的核心思想是在大量信息中有选择地筛选出少量重要信息并聚焦。在神经网络中，通过计算查询（Query）与键值对（Key-Value）之间的相似度确定注意力权重分布，进而对Value加权求和得到输出。计算分为三步：相似度计算、<span class="ent" data-e="Softmax">Softmax</span>归一化、加权求和。</div>
-       <div class="pdf-sub">2.2 软注意力与硬注意力</div>
-       <div class="pdf-body"><span class="ent" data-e="软注意力">软注意力</span>对所有输入信息分配0到1之间的权重，是可微的，可通过<span class="ent" data-e="反向传播">反向传播</span>端到端训练。<span class="ent" data-e="硬注意力">硬注意力</span>则选择输入子集，权重为0或1，更符合人类注意特点，但不可微，需借助<span class="ent" data-e="强化学习">强化学习</span>方法训练。</div>
-       <div class="pdf-sub">2.3 自注意力机制</div>
-       <div class="pdf-body"><span class="ent" data-e="自注意力">自注意力</span>中查询、键、值来自同一序列，能直接捕捉序列中任意两位置关系。在<span class="ent" data-e="Transformer">Transformer</span>中采用缩放点积注意力：Attention(Q,K,V)=Softmax(QK^T/√d_k)V，可并行计算，相比<span class="ent" data-e="LSTM">LSTM</span>有显著速度优势。</div>
-       <div class="pdf-sub">2.4 多头注意力</div>
-       <div class="pdf-body"><span class="ent" data-e="多头注意力">多头注意力</span>是<span class="ent" data-e="Transformer">Transformer</span>核心组件，将Q、K、V投影到h个子空间并行计算注意力，最后拼接输出，使模型能在不同子空间关注不同位置信息。</div>`},
-    {hd:'朱张莉等：注意力机制在深度学习中的研究进展',
-     cnt:`<div class="pdf-sec">3 注意力机制分类</div>
-       <div class="pdf-sub">3.1 按维度分类</div>
-       <div class="pdf-body">根据作用维度可分为空间注意力、通道注意力和混合注意力。空间注意力代表模型有<span class="ent" data-e="STN">STN</span>；通道注意力代表有<span class="ent" data-e="SENet">SENet</span>；混合注意力代表有<span class="ent" data-e="CBAM">CBAM</span>。</div>
-       <div class="pdf-sec">4 典型应用</div>
-       <div class="pdf-sub">4.1 自然语言处理</div>
-       <div class="pdf-body">在<span class="ent" data-e="机器翻译">机器翻译</span>、文本分类、问答系统、<span class="ent" data-e="文本摘要">文本摘要</span>等任务中，注意力机制已成为标配。基于Transformer的<span class="ent" data-e="BERT">BERT</span>、<span class="ent" data-e="GPT">GPT</span>系列将应用推向新高度。</div>
-       <div class="pdf-sub">4.2 计算机视觉</div>
-       <div class="pdf-body"><span class="ent" data-e="SENet">SENet</span>通过通道注意力在ImageNet上取得显著提升；<span class="ent" data-e="CBAM">CBAM</span>结合空间与通道注意力；视觉Transformer（<span class="ent" data-e="ViT">ViT</span>）将图像分割为patch序列直接使用Transformer分类，在多个基准上超越了<span class="ent" data-e="卷积神经网络">卷积神经网络</span>。</div>`},
-    {hd:'朱张莉等：注意力机制在深度学习中的研究进展',
-     cnt:`<div class="pdf-sec">5 挑战与展望</div>
-       <div class="pdf-body">尽管注意力机制已取得巨大成功，但仍面临若干挑战：一是计算复杂度问题，自注意力复杂度为序列长度的平方；二是模型可解释性问题；三是与其他结构的有效融合问题。未来方向包括稀疏注意力、线性注意力、多模态注意力以及理论解释等。</div>
-       <div class="pdf-body" style="margin-top:10px;"><b>参考文献：</b></div>
-       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[1] 相关研究见原文参考文献。</div>
-       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[2] Bahdanau D, et al. Neural machine translation by jointly learning to align and translate. ICLR 2015.</div>
-       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[3] Vaswani A, et al. Attention is all you need. NeurIPS 2017.</div>`}
-  ],
-  chs:[
-    {id:'d1s1',n:'1',t:'引言',subs:[{id:'d1s1_1',n:'1.1',t:'注意力机制的认知基础',es:[]}],es:['深度学习','注意力机制','机器翻译','Encoder-Decoder','Transformer','自注意力','循环神经网络','卷积神经网络','BERT','GPT','LSTM']},
-    {id:'d1s2',n:'2',t:'注意力机制基本原理',subs:[
-      {id:'d1s2_1',n:'2.1',t:'通用框架',es:['注意力机制','Softmax']},
-      {id:'d1s2_2',n:'2.2',t:'软注意力与硬注意力',es:['软注意力','硬注意力','反向传播','强化学习']},
-      {id:'d1s2_3',n:'2.3',t:'自注意力机制',es:['自注意力','Transformer','LSTM']},
-      {id:'d1s2_4',n:'2.4',t:'多头注意力',es:['多头注意力','Transformer']}
-    ],es:[]},
-    {id:'d1s3',n:'3',t:'注意力机制分类',subs:[{id:'d1s3_1',n:'3.1',t:'按维度分类',es:['STN','SENet','CBAM']}],es:[]},
-    {id:'d1s4',n:'4',t:'典型应用',subs:[
-      {id:'d1s4_1',n:'4.1',t:'自然语言处理',es:['机器翻译','文本摘要','BERT','GPT']},
-      {id:'d1s4_2',n:'4.2',t:'计算机视觉',es:['SENet','CBAM','ViT','卷积神经网络']}
-    ],es:[]},
-    {id:'d1s5',n:'5',t:'挑战与展望',subs:[],es:[]}
-  ]
-};
-
-// ---- Paper 2 ----
-const P2={
-  id:'doc2',title:'图卷积神经网络综述',
-  authors:'徐冰冰，岑科廷，黄俊杰，沈华伟，程学旗',aff:'中国科学院计算技术研究所',
-  journal:'计算机学报',year:'2020',vol:'43(5):755-780',
-  abs:'过去几年，卷积神经网络在欧氏空间数据上取得巨大成功，但现实中大量数据以图形式存在。将卷积迁移到图数据的核心在于图卷积算子和图池化算子的构建。本文综述图卷积神经网络，介绍谱方法和空间方法两类经典方法，以及最新进展和相关应用，最后总结发展趋势。',
-  kw:['图卷积神经网络','卷积','图池化','谱方法','空间方法','GCN','GAT'],
-  pages:[
-    {hd:'计算机学报 2020年第43卷第5期',
-     cnt:`<div class="pdf-title">图卷积神经网络综述</div>
-       <div class="pdf-auth">徐冰冰，岑科廷，黄俊杰，沈华伟，程学旗</div>
-       <div class="pdf-aff">（中国科学院计算技术研究所，北京 100190）</div>
-       <div class="pdf-abs-lbl">摘 要</div>
-       <div class="pdf-abs">过去几年，<span class="ent" data-e="卷积神经网络">卷积神经网络</span>因其强大建模能力引起广泛关注。然而传统CNN只能处理欧氏空间数据，现实中交通网络、社交网络、引用网络等以图数据形式存在。本文对<span class="ent" data-e="图卷积神经网络">图卷积神经网络</span>进行综述，介绍<span class="ent" data-e="谱方法">谱方法</span>和<span class="ent" data-e="空间方法">空间方法</span>两类经典方法、<span class="ent" data-e="图池化">图池化</span>算子、最新进展及应用。</div>
-       <div class="pdf-kw"><b>关键词：</b><span class="ent" data-e="图卷积神经网络">图卷积神经网络</span>；<span class="ent" data-e="卷积">卷积</span>；<span class="ent" data-e="池化">池化</span>；<span class="ent" data-e="GCN">GCN</span>；<span class="ent" data-e="GAT">GAT</span></div>`},
-    {hd:'徐冰冰等：图卷积神经网络综述',
-     cnt:`<div class="pdf-sec">1 引言</div>
-       <div class="pdf-body">近年来，<span class="ent" data-e="深度学习">深度学习</span>在诸多领域取得突破，<span class="ent" data-e="卷积神经网络">卷积神经网络</span>在图像分类、目标检测等CV任务中表现卓越。CNN的成功建立在数据具有平移不变性的基础上。</div>
-       <div class="pdf-body">然而现实中存在大量非欧氏空间数据，以图（Graph）形式存在。图数据的复杂性在于：每个节点邻居数目不固定，节点间无固定顺序，传统<span class="ent" data-e="卷积">卷积</span>操作无法直接应用。<span class="ent" data-e="图神经网络">图神经网络</span>（GNN）正是为解决此问题而提出，其中<span class="ent" data-e="图卷积神经网络">图卷积神经网络</span>（<span class="ent" data-e="GCN">GCN</span>）通过在图上定义卷积算子实现有效特征提取。2017年Kipf和Welling<span class="ref">[1]</span>提出的GCN模型是里程碑工作。</div>
-       <div class="pdf-sub">1.1 图数据的定义与挑战</div>
-       <div class="pdf-body">图表示为G=(V,E)，图数据不规则性带来三方面挑战：平移不变性缺失、节点排列不固定、图结构多样。</div>`},
-    {hd:'徐冰冰等：图卷积神经网络综述',
-     cnt:`<div class="pdf-sec">2 图卷积神经网络方法</div>
-       <div class="pdf-sub">2.1 谱方法</div>
-       <div class="pdf-body"><span class="ent" data-e="谱方法">谱方法</span>借助图信号处理中的卷积定理，在谱域定义图卷积。首先计算<span class="ent" data-e="拉普拉斯矩阵">拉普拉斯矩阵</span>的特征值和特征向量，将图信号变换到谱域卷积后再变换回空域。Bruna等人首次引入谱方法，但需特征分解（O(n³)）。<span class="ent" data-e="ChebNet">ChebNet</span>利用切比雪夫多项式近似避免特征分解。Kipf等人简化提出经典<span class="ent" data-e="GCN">GCN</span>：H^(l+1)=σ(D̃^(-1/2)ÃD̃^(-1/2)H^(l)W^(l))。</div>
-       <div class="pdf-sub">2.2 空间方法</div>
-       <div class="pdf-body"><span class="ent" data-e="空间方法">空间方法</span>直接在节点域定义卷积，通过聚合自身及邻居特征实现。<span class="ent" data-e="GraphSAGE">GraphSAGE</span>通过采样邻居并使用聚合函数实现归纳式学习；<span class="ent" data-e="GAT">GAT</span>引入<span class="ent" data-e="注意力机制">注意力机制</span>为不同邻居分配不同权重。</div>
-       <div class="pdf-sub">2.3 图池化</div>
-       <div class="pdf-body">与CNN中<span class="ent" data-e="池化">池化</span>类似，<span class="ent" data-e="图池化">图池化</span>降低图分辨率、减少计算量。方法包括基于拓扑结构的池化（Graclus、DiffPool）和基于特征的池化（gPool）。</div>`},
-    {hd:'徐冰冰等：图卷积神经网络综述',
-     cnt:`<div class="pdf-sec">3 最新进展</div>
-       <div class="pdf-sub">3.1 注意力机制在GCN中的应用</div>
-       <div class="pdf-body">将<span class="ent" data-e="注意力机制">注意力机制</span>引入GCN是重要方向。<span class="ent" data-e="GAT">GAT</span>通过自注意力计算邻居权重；<span class="ent" data-e="GATv2">GATv2</span>改进注意力函数表达能力；<span class="ent" data-e="AGNN">AGNN</span>在传播中加入注意力。</div>
-       <div class="pdf-sub">3.2 大规模图卷积网络</div>
-       <div class="pdf-body">针对大规模图，提出子图采样（<span class="ent" data-e="GraphSAGE">GraphSAGE</span>邻居采样）、层采样（FastGCN）、图采样（Cluster-GCN）等策略。SGC通过简化计算提高效率。</div>
-       <div class="pdf-sec">4 应用</div>
-       <div class="pdf-sub">4.1 推荐系统</div>
-       <div class="pdf-body"><span class="ent" data-e="GCMC">GCMC</span>将图自编码器用于矩阵补全；<span class="ent" data-e="NGCF">NGCF</span>在用户-物品图上嵌入传播；<span class="ent" data-e="LightGCN">LightGCN</span>简化GCN设计取得优异效果。</div>
-       <div class="pdf-sub">4.2 交通预测</div>
-       <div class="pdf-body"><span class="ent" data-e="STGCN">STGCN</span>用图卷积建空间依赖、一维卷积建时间依赖；<span class="ent" data-e="DCRNN">DCRNN</span>结合扩散卷积和<span class="ent" data-e="GRU">GRU</span>。</div>`},
-    {hd:'徐冰冰等：图卷积神经网络综述',
-     cnt:`<div class="pdf-sub">4.3 其他应用</div>
-       <div class="pdf-body">GCN还广泛应用于分子性质预测、药物发现、蛋白质相互作用等生物信息学任务；NLP中的关系抽取、事件抽取；CV中的场景图生成、点云处理等。</div>
-       <div class="pdf-sec">5 总结与展望</div>
-       <div class="pdf-body">图卷积神经网络作为处理图结构数据的有力工具，已在多领域展现巨大潜力。未来方向包括异质图神经网络、动态图神经网络、可解释性、与预训练语言模型结合、自动化设计（AutoML for GNN）等。</div>
-       <div class="pdf-body" style="margin-top:10px;"><b>参考文献：</b></div>
-       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[1] Kipf T N, Welling M. Semi-supervised classification with graph convolutional networks. ICLR 2017.</div>`}
-  ],
-  chs:[
-    {id:'d2s1',n:'1',t:'引言',subs:[{id:'d2s1_1',n:'1.1',t:'图数据的定义与挑战',es:[]}],es:['深度学习','卷积神经网络','卷积','图神经网络','图卷积神经网络','GCN']},
-    {id:'d2s2',n:'2',t:'图卷积神经网络方法',subs:[
-      {id:'d2s2_1',n:'2.1',t:'谱方法',es:['谱方法','拉普拉斯矩阵','ChebNet','GCN']},
-      {id:'d2s2_2',n:'2.2',t:'空间方法',es:['空间方法','GraphSAGE','GAT','注意力机制']},
-      {id:'d2s2_3',n:'2.3',t:'图池化',es:['池化','图池化']}
-    ],es:[]},
-    {id:'d2s3',n:'3',t:'最新进展',subs:[
-      {id:'d2s3_1',n:'3.1',t:'注意力机制在GCN中的应用',es:['注意力机制','GAT','GATv2','AGNN']},
-      {id:'d2s3_2',n:'3.2',t:'大规模图卷积网络',es:['GraphSAGE']}
-    ],es:[]},
-    {id:'d2s4',n:'4',t:'应用',subs:[
-      {id:'d2s4_1',n:'4.1',t:'推荐系统',es:['GCMC','NGCF','LightGCN']},
-      {id:'d2s4_2',n:'4.2',t:'交通预测',es:['STGCN','DCRNN','GRU']},
-      {id:'d2s4_3',n:'4.3',t:'其他应用',es:[]}
-    ],es:[]},
-    {id:'d2s5',n:'5',t:'总结与展望',subs:[],es:[]}
-  ]
-};
-
-// ---- Paper 3 ----
-const P3={
-  id:'doc3',title:'预训练语言模型研究综述',
-  authors:'邱锡鹏，孙天祥，陈祎琳，丁宁，刘知远',aff:'复旦大学/清华大学',
-  journal:'中国科学：信息科学',year:'2021',vol:'51(9):1437-1464',
-  abs:'近年来，基于大规模语料的预训练语言模型在NLP领域取得巨大成功，已成为基础技术。本文系统综述预训练语言模型研究进展，介绍从静态词向量到上下文相关词向量的发展历程，从表示类型、预训练任务、模型架构等角度分类梳理ELMo、GPT、BERT等代表性模型，总结应用，讨论压缩等优化技术，分析挑战并展望未来方向。',
-  kw:['预训练语言模型','Transformer','BERT','GPT','ELMo','微调','知识蒸馏'],
-  pages:[
-    {hd:'中国科学：信息科学 2021年第51卷第9期',
-     cnt:`<div class="pdf-title">预训练语言模型研究综述</div>
-       <div class="pdf-auth">邱锡鹏，孙天祥，陈祎琳，丁宁，刘知远</div>
-       <div class="pdf-aff">（复旦大学 计算机学院；清华大学 计算机系）</div>
-       <div class="pdf-abs-lbl">摘 要</div>
-       <div class="pdf-abs">近年来，基于大规模语料的<span class="ent" data-e="预训练语言模型">预训练语言模型</span>在NLP领域取得巨大成功，通过在大规模无标注语料上进行<span class="ent" data-e="自监督学习">自监督学习</span>，学习通用语言表示，然后在下游任务<span class="ent" data-e="微调">微调</span>，显著提升性能。本文系统综述预训练语言模型研究进展，分类梳理<span class="ent" data-e="ELMo">ELMo</span>、<span class="ent" data-e="GPT">GPT</span>、<span class="ent" data-e="BERT">BERT</span>等代表性模型，总结应用，讨论<span class="ent" data-e="知识蒸馏">知识蒸馏</span>等优化技术，分析挑战并展望。</div>
-       <div class="pdf-kw"><b>关键词：</b><span class="ent" data-e="预训练语言模型">预训练语言模型</span>；<span class="ent" data-e="Transformer">Transformer</span>；<span class="ent" data-e="BERT">BERT</span>；<span class="ent" data-e="GPT">GPT</span>；<span class="ent" data-e="微调">微调</span>；<span class="ent" data-e="知识蒸馏">知识蒸馏</span></div>`},
-    {hd:'邱锡鹏等：预训练语言模型研究综述',
-     cnt:`<div class="pdf-sec">1 引言</div>
-       <div class="pdf-body">自然语言处理是人工智能重要方向，语言表示是核心问题。早期Word2Vec、GloVe等静态词向量无法解决一词多义问题。</div>
-       <div class="pdf-body">2018年以来预训练语言模型兴起彻底改变了NLP范式。<span class="ent" data-e="ELMo">ELMo</span><span class="ref">[1]</span>使用双向<span class="ent" data-e="LSTM">LSTM</span>获取上下文相关词向量；<span class="ent" data-e="GPT">GPT</span><span class="ref">[2]</span>采用<span class="ent" data-e="Transformer">Transformer</span>解码器自回归预训练；<span class="ent" data-e="BERT">BERT</span><span class="ref">[3]</span>采用Transformer编码器，通过<span class="ent" data-e="掩码语言模型">掩码语言模型</span>实现双向表示，在11项NLP任务上刷新记录。预训练加<span class="ent" data-e="微调">微调</span>成为NLP主流范式。</div>
-       <div class="pdf-sub">1.1 发展历程</div>
-       <div class="pdf-body">发展分为三阶段：静态词向量（Word2Vec、GloVe）、上下文相关词向量（<span class="ent" data-e="ELMo">ELMo</span>、CoVe）、预训练语言模型（<span class="ent" data-e="GPT">GPT</span>、<span class="ent" data-e="BERT">BERT</span>）。</div>`},
-    {hd:'邱锡鹏等：预训练语言模型研究综述',
-     cnt:`<div class="pdf-sec">2 预训练语言模型分类</div>
-       <div class="pdf-sub">2.1 按模型架构分类</div>
-       <div class="pdf-body">根据骨干网络可分为：基于<span class="ent" data-e="LSTM">LSTM</span>的模型（<span class="ent" data-e="ELMo">ELMo</span>）；基于<span class="ent" data-e="Transformer">Transformer</span>编码器的模型（<span class="ent" data-e="BERT">BERT</span>、<span class="ent" data-e="RoBERTa">RoBERTa</span>、<span class="ent" data-e="ALBERT">ALBERT</span>），适用于理解任务；基于Transformer解码器的模型（<span class="ent" data-e="GPT">GPT</span>系列、<span class="ent" data-e="GPT-2">GPT-2</span>、<span class="ent" data-e="GPT-3">GPT-3</span>），擅长生成任务；基于编码器-解码器的模型（T5、BART）。</div>
-       <div class="pdf-sub">2.2 按预训练任务分类</div>
-       <div class="pdf-body">主要预训练任务包括：<span class="ent" data-e="语言模型">语言模型</span>（LM，自回归，代表GPT）；<span class="ent" data-e="掩码语言模型">掩码语言模型</span>（MLM，自编码，代表BERT）；排列语言模型（XLNet）；替换词检测（ELECTRA）等。</div>
-       <div class="pdf-sub">2.3 BERT及其改进</div>
-       <div class="pdf-body"><span class="ent" data-e="BERT">BERT</span>采用多层双向Transformer编码器，使用MLM和NSP两个预训练任务，提供Base（110M参数）和Large（340M参数）两个版本。改进模型包括：<span class="ent" data-e="RoBERTa">RoBERTa</span>（更多数据、去掉NSP）、<span class="ent" data-e="ALBERT">ALBERT</span>（参数共享减少参数）、<span class="ent" data-e="SpanBERT">SpanBERT</span>（Span掩码）、<span class="ent" data-e="ERNIE">ERNIE</span>（知识掩码）、<span class="ent" data-e="XLNet">XLNet</span>（排列语言模型）。</div>`},
-    {hd:'邱锡鹏等：预训练语言模型研究综述',
-     cnt:`<div class="pdf-sec">3 应用</div>
-       <div class="pdf-sub">3.1 自然语言理解</div>
-       <div class="pdf-body">在<span class="ent" data-e="微调">微调</span>阶段添加任务输出层进行端到端训练。文本分类用<[BOS_never_used_51bce0c785ca2f68081bfa7d91973934]>表示；<span class="ent" data-e="命名实体识别">命名实体识别</span>用每个词表示进行序列标注；问答任务预测答案起止位置。<span class="ent" data-e="BERT">BERT</span>在GLUE、SQuAD等基准上取得显著超越之前方法的结果。</div>
-       <div class="pdf-sub">3.2 自然语言生成</div>
-       <div class="pdf-body">基于Transformer解码器的自回归模型（<span class="ent" data-e="GPT">GPT</span>系列）表现优异。<span class="ent" data-e="GPT-2">GPT-2</span>展现零样本生成能力；<span class="ent" data-e="GPT-3">GPT-3</span>（1750亿参数）通过上下文学习展现少样本学习能力。</div>
-       <div class="pdf-sub">3.3 跨领域与多模态</div>
-       <div class="pdf-body">跨领域模型包括BioBERT（生物医学）、SciBERT（科学）等。多模态方向，<span class="ent" data-e="ViT">ViT</span>将Transformer用于图像分类；CLIP通过对比学习对齐图像和文本表示。</div>`},
-    {hd:'邱锡鹏等：预训练语言模型研究综述',
-     cnt:`<div class="pdf-sec">4 模型压缩与优化</div>
-       <div class="pdf-body">大规模模型参数量巨大，难以部署。主要压缩技术：（1）<span class="ent" data-e="知识蒸馏">知识蒸馏</span>：将大模型知识迁移到小模型（DistilBERT、TinyBERT）；（2）模型剪枝：移除不重要权重；（3）权重量化：低比特表示（INT8）；（4）参数共享（<span class="ent" data-e="ALBERT">ALBERT</span>跨层共享）。</div>
-       <div class="pdf-sec">5 挑战与展望</div>
-       <div class="pdf-body">挑战包括：模型效率问题、可解释性不足、常识推理能力弱、偏见与公平性问题。未来方向：超大规模预训练模型（大语言模型）、高效预训练与微调、提示学习、多模态预训练、知识增强、可解释性研究等。以<span class="ent" data-e="GPT-3">GPT-3</span>为代表的大语言模型展示了强大的通用能力，预训练语言模型正朝着更大规模、更多模态、更强能力方向发展。</div>
-       <div class="pdf-body" style="margin-top:10px;"><b>参考文献：</b></div>
-       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[1] Peters M E, et al. Deep contextualized word representations. NAACL 2018.</div>
-       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[2] Radford A, et al. Improving language understanding by generative pre-training. 2018.</div>
-       <div class="pdf-body" style="text-indent:0;font-size:8.5px;color:#718096;">[3] Devlin J, et al. BERT: Pre-training of deep bidirectional transformers. NAACL 2019.</div>`}
-  ],
-  chs:[
-    {id:'d3s1',n:'1',t:'引言',subs:[{id:'d3s1_1',n:'1.1',t:'发展历程',es:['ELMo']}],es:['预训练语言模型','ELMo','GPT','BERT','LSTM','Transformer','掩码语言模型','自监督学习','微调']},
-    {id:'d3s2',n:'2',t:'预训练语言模型分类',subs:[
-      {id:'d3s2_1',n:'2.1',t:'按模型架构分类',es:['LSTM','Transformer','BERT','RoBERTa','ALBERT','GPT','GPT-2','GPT-3','ELMo']},
-      {id:'d3s2_2',n:'2.2',t:'按预训练任务分类',es:['语言模型','掩码语言模型']},
-      {id:'d3s2_3',n:'2.3',t:'BERT及其改进',es:['BERT','RoBERTa','ALBERT','SpanBERT','ERNIE','XLNet']}
-    ],es:[]},
-    {id:'d3s3',n:'3',t:'应用',subs:[
-      {id:'d3s3_1',n:'3.1',t:'自然语言理解',es:['微调','命名实体识别','BERT']},
-      {id:'d3s3_2',n:'3.2',t:'自然语言生成',es:['GPT','GPT-2','GPT-3','Transformer']},
-      {id:'d3s3_3',n:'3.3',t:'跨领域与多模态',es:['ViT']}
-    ],es:[]},
-    {id:'d3s4',n:'4',t:'模型压缩与优化',subs:[],es:['知识蒸馏','ALBERT']},
-    {id:'d3s5',n:'5',t:'挑战与展望',subs:[],es:['GPT-3']}
-  ]
-};
-
-const PAPERS={doc1:P1,doc2:P2,doc3:P3};
-
-// ============ BUILD GRAPH DATA ============
-let nodes=[],links=[],nmap={};
-// doc nodes
-['doc1','doc2','doc3'].forEach(d=>{
-  const n={id:d,name:PAPERS[d].title,type:'doc',doc:d,exp:false,vis:true,
-    x:null,y:null,fx:null,fy:null};
-  nodes.push(n);nmap[d]=n;
-});
-// chapters, subsections, entities
-['doc1','doc2','doc3'].forEach(d=>{
-  const p=PAPERS[d];
-  (p.chs||[]).forEach(ch=>{
-    const addCh=(parentId,ch)=>{
-      const hasSub=(ch.subs&&ch.subs.length>0);
-      const hasEnt=(ch.es&&ch.es.length>0);
-      const cn={id:ch.id,name:ch.n+' '+ch.t,type:'ch',doc:d,num:ch.n,exp:false,vis:false};
-      nodes.push(cn);nmap[ch.id]=cn;
-      links.push({source:parentId,target:ch.id,doc:d});
-      if(hasSub){
-        ch.subs.forEach(sub=>addCh(ch.id,sub));
-      }
-      if(hasEnt){
-        const usedInSub=new Set();
-        if(hasSub)ch.subs.forEach(s=>(s.es||[]).forEach(e=>usedInSub.add(e)));
-        ch.es.forEach(e=>{
-          if(usedInSub.has(e))return;
-          const eid=d+'_'+ch.id+'_'+e;
-          if(!nmap[eid]){
-            const en={id:eid,name:e,type:'ent',doc:d,et:entType(e),vis:false};
-            nodes.push(en);nmap[eid]=en;
-          }
-          links.push({source:ch.id,target:eid,doc:d});
-        });
-      }
-    };
-    addCh(d,ch);
-  });
-});
-// cross-doc links
-const enameMap={};
-nodes.filter(n=>n.type==='ent').forEach(n=>{
-  if(!enameMap[n.name])enameMap[n.name]=[];
-  enameMap[n.name].push(n.id);
-});
-Object.entries(enameMap).forEach(([name,ids])=>{
-  if(ids.length>1){
-    for(let i=1;i<ids.length;i++){
-      links.push({source:ids[0],target:ids[i],doc:'cross',cross:true});
-    }
-  }
-});
-
-// ============ RENDER PDF ============
-function renderPDF(){
-  const panel=document.getElementById('pdfPanel');
-  let h='',pn=0;
-  ['doc1','doc2','doc3'].forEach(d=>{
-    const p=PAPERS[d];
-    (p.pages||[]).forEach((pg,idx)=>{
-      pn++;
-      h+=`<div class="pdf-page" id="pg-${d}-${idx}" data-d="${d}" data-p="${idx}">
-        <div class="pdf-hd">${pg.hd}</div>${pg.cnt}
-        <div class="pdf-ft">- ${pn} -</div></div>`;
-    });
-  });
-  panel.innerHTML=h;
-  panel.querySelectorAll('.ent').forEach(el=>{
-    el.addEventListener('click',()=>{
-      const name=el.dataset.e;
-      highlightEntity(name);
-    });
-  });
-}
-
-// ============ RENDER TREE ============
-function renderTree(){
-  const c=document.getElementById('treeContent');
-  let h='';
-  ['doc1','doc2','doc3'].forEach(d=>{
-    const p=PAPERS[d];
-    const docHasCh=(p.chs&&p.chs.length>0);
-    h+=`<div class="tn" data-n="${d}"><div class="tn-c" data-n="${d}">
-      <span class="tn-arrow${docHasCh?'':' hidden'}"></span>
-      <span class="tn-icon" style="color:${COLORS[d]}"><i class="idoc"></i></span>
-      <span class="tn-label">${p.title}</span></div>
-      <div class="tn-children" data-p="${d}">`;
-    (p.chs||[]).forEach(ch=>{
-      const chHasSub=(ch.subs&&ch.subs.length>0);
-      const chHasEnt=(ch.es&&ch.es.length>0);
-      h+=`<div class="tn" data-n="${ch.id}"><div class="tn-c" data-n="${ch.id}">
-        <span class="tn-arrow${(chHasSub||chHasEnt)?'':' hidden'}"></span>
-        <span class="tn-icon" style="color:#dd6b20"><i class="ich"></i></span>
-        <span class="tn-label">${ch.n} ${ch.t}</span></div>
-        <div class="tn-children" data-p="${ch.id}">`;
-      if(chHasSub){
-        ch.subs.forEach(sub=>{
-          const subHasEnt=(sub.es&&sub.es.length>0);
-          h+=`<div class="tn" data-n="${sub.id}"><div class="tn-c" data-n="${sub.id}">
-            <span class="tn-arrow${subHasEnt?'':' hidden'}"></span>
-            <span class="tn-icon" style="color:#ed8936"><i class="ich"></i></span>
-            <span class="tn-label">${sub.n} ${sub.t}</span></div>
-            <div class="tn-children" data-p="${sub.id}">`;
-          if(subHasEnt){
-            [...new Set(sub.es)].sort((a,b)=>a.localeCompare(b,'zh')).forEach(e=>{
-              const eid=d+'_'+sub.id+'_'+e;
-              h+=`<div class="tn" data-n="${eid}"><div class="tn-c" data-n="${eid}">
-                <span class="tn-arrow hidden"></span>
-                <span class="tn-icon" style="color:${entColor(e)}"><i class="ient"></i></span>
-                <span class="tn-label">${e}</span></div></div>`;
-            });
-          }
-          h+=`</div></div>`;
-        });
-      }
-      if(chHasEnt){
-        const used=new Set();
-        if(chHasSub)ch.subs.forEach(s=>(s.es||[]).forEach(e=>used.add(e)));
-        const direct=ch.es.filter(e=>!used.has(e));
-        [...new Set(direct)].sort((a,b)=>a.localeCompare(b,'zh')).forEach(e=>{
-          const eid=d+'_'+ch.id+'_'+e;
-          h+=`<div class="tn" data-n="${eid}"><div class="tn-c" data-n="${eid}">
-            <span class="tn-arrow hidden"></span>
-            <span class="tn-icon" style="color:${entColor(e)}"><i class="ient"></i></span>
-            <span class="tn-label">${e}</span></div></div>`;
-        });
-      }
-      h+=`</div></div>`;
-    });
-    h+=`</div></div>`;
-  });
-  c.innerHTML=h;
-  c.querySelectorAll('.tn-c').forEach(el=>{
-    let clkT=null;
-    el.addEventListener('click',e=>{
-      e.stopPropagation();
-      if(clkT){clearTimeout(clkT);clkT=null;return;}
-      const nid=el.dataset.n;
-      const n=nmap[nid];
-      clkT=setTimeout(()=>{
-        clkT=null;
-        // entity nodes: select in graph, don't toggle
-        if(n&&n.type==='ent'){
-          if(!n.vis){
-            // expand all parent chapters to make entity visible
-            ensureExp(nid);
-            // ensureExp calls expandGraph on parents which sets vis=true for children
-            if(!n.vis){n.vis=true;updGraph();}
-          }
-          setTimeout(()=>selN(n),n.vis?0:150);
-        }else{
-          togNode(nid);
-        }
-      },200);
-    });
-    el.addEventListener('dblclick',e=>{
-      e.stopPropagation();
-      if(clkT){clearTimeout(clkT);clkT=null;}
-      jumpPDF(el.dataset.n);
-    });
-  });
-}
-
-// ============ LEGEND ============
-function renderLegend(){
-  const el=document.getElementById('legend');
-  let h='';
-  ['doc1','doc2','doc3'].forEach(d=>{
-    h+=`<div class="legend-item active" data-d="${d}">
-      <span class="legend-dot" style="background:${COLORS[d]}"></span>
-      <span>${DOCNAMES[d]}</span></div>`;
-  });
-  el.innerHTML=h;
-  let hlDoc=null;
-  el.querySelectorAll('.legend-item').forEach(li=>{
-    li.addEventListener('click',()=>{
-      const d=li.dataset.d;
-      if(hlDoc===d){hlDoc=null;el.querySelectorAll('.legend-item').forEach(x=>x.classList.add('active'));}
-      else{hlDoc=d;el.querySelectorAll('.legend-item').forEach(x=>x.classList.remove('active'));li.classList.add('active');}
-      window._hlDoc=hlDoc;
-      updGraph();
-    });
-  });
-}
-
-// ============ TREE TOGGLE ============
-function togNode(nid){
-  const n=nmap[nid];if(!n)return;
-  const cd=document.querySelector(`.tn-children[data-p="${nid}"]`);
-  const ar=document.querySelector(`.tn-c[data-n="${nid}"] .tn-arrow`);
-  if(!cd)return;
-  if(cd.classList.contains('show')){
-    cd.classList.remove('show');
-    if(ar)ar.classList.remove('exp');
-    n.exp=false;
-    collapseGraph(nid);
-  }else{
-    cd.classList.add('show');
-    if(ar)ar.classList.add('exp');
-    n.exp=true;
-    expandGraph(nid);
-  }
-}
-function expandGraph(pid){
-  links.forEach(l=>{
-    const sid=typeof l.source==='object'?l.source.id:l.source;
-    if(sid===pid){
-      const tid=typeof l.target==='object'?l.target.id:l.target;
-      const c=nmap[tid];
-      if(c&&!c.vis){c.vis=true;c.fx=null;c.fy=null;}
-    }
-  });
-  updGraph();
-}
-function collapseGraph(pid){
-  function col(id){
-    links.forEach(l=>{
-      const sid=typeof l.source==='object'?l.source.id:l.source;
-      if(sid===id){
-        const tid=typeof l.target==='object'?l.target.id:l.target;
-        const c=nmap[tid];
-        if(c&&c.type!=='doc'){
-          c.vis=false;c.exp=false;c.x=null;c.y=null;c.fx=null;c.fy=null;
-          const cd=document.querySelector(`.tn-children[data-p="${tid}"]`);
-          if(cd)cd.classList.remove('show');
-          const ar=document.querySelector(`.tn-c[data-n="${tid}"] .tn-arrow`);
-          if(ar)ar.classList.remove('exp');
-          col(tid);
-        }
-      }
-    });
-  }
-  col(pid);updGraph();
-}
-
-// ============ D3 GRAPH ============
-let sim,svg,g,linkSel,nodeSel,selNode=null;
-let GW=0,GH=0;
-function initGraph(){
-  const panel=document.getElementById('graphPanel');
-  GW=panel.clientWidth,GH=panel.clientHeight;
-  svg=d3.select('#gsvg').attr('width',GW).attr('height',GH);
-  const zm=d3.zoom().scaleExtent([.25,3]).on('zoom',e=>g.attr('transform',e.transform));
-  svg.call(zm);
-  // dot grid
-  const defs=svg.append('defs');
-  defs.append('pattern').attr('id','grid').attr('width',20).attr('height',20)
-    .attr('patternUnits','userSpaceOnUse')
-    .append('circle').attr('cx',10).attr('cy',10).attr('r',.8).attr('fill','#edf2f7');
-  svg.append('rect').attr('width','100%').attr('height','100%').attr('fill','url(#grid)');
-  g=svg.append('g');
-  // position doc nodes in flat triangle - adapt to panel size
-  const docNodes=nodes.filter(n=>n.type==='doc');
-  const cx=GW/2,cy=GH/2;
-  // scale offsets based on available space
-  const margin=70; // leave room for chapters+labels
-  const maxOffX=GW/2-margin;
-  const maxOffY=GH/2-margin;
-  const offX=Math.min(GW*0.18,maxOffX);
-  const offY=Math.min(GH*0.18,maxOffY);
-  const positions=[
-    {x:cx,y:cy-offY-10},       // doc1 (red) top
-    {x:cx+offX,y:cy+offY*0.6}, // doc2 (blue) bottom-right
-    {x:cx-offX,y:cy+offY*0.6}  // doc3 (green) bottom-left
+(function(){
+  'use strict';
+  const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+  const icon=n=>'<svg class="i"><use href="#i-'+n+'"/></svg>';
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const bytes=n=>n>1048576?(n/1048576).toFixed(1)+' MB':(n/1024).toFixed(0)+' KB';
+  const DOC_COLORS={'doc-b2613a49':'#06b6d4','doc-fe466a6d':'#8b5cf6','doc-9d3eec8b':'#10b981'};
+  const SAMPLE_DOCS=[
+    {id:'doc-b2613a49',name:'深度学习研究综述（尹宝才）.pdf',file:'深度学习研究综述.pdf',fileCandidates:['深度学习研究综述.pdf','深度学习研究综述（尹宝才）.pdf'],size:4433665,pages:12,project:'sample'},
+    {id:'doc-fe466a6d',name:'卷积神经网络研究综述（李彦冬）.pdf',file:'卷积神经网络研究综述.pdf',fileCandidates:['卷积神经网络研究综述.pdf','卷积神经网络研究综述（李彦冬）.pdf'],size:1605896,pages:9,project:'sample'},
+    {id:'doc-9d3eec8b',name:'视觉注意力机制综述（王文冠）.pdf',file:'视觉注意力机制综述.pdf',fileCandidates:['视觉注意力机制综述.pdf','视觉注意力机制综述（王文冠）.pdf'],size:2778355,pages:24,project:'sample'}
   ];
-  docNodes.forEach((dn,i)=>{
-    dn.x=positions[i].x;
-    dn.y=positions[i].y;
-    dn.fx=dn.x;dn.fy=dn.y;
-    dn._pinX=dn.x;dn._pinY=dn.y;
-  });
-  sim=d3.forceSimulation(nodes.filter(n=>n.vis))
-    .force('link',d3.forceLink(links.filter(l=>{
-      const sid=typeof l.source==='object'?l.source.id:l.source,tid=typeof l.target==='object'?l.target.id:l.target;
-      return nmap[sid]&&nmap[sid].vis&&nmap[tid]&&nmap[tid].vis;
-    })).id(d=>d.id).distance(l=>{
-      if(l.cross)return Math.min(200,GW*0.45);
-      const tn=nmap[typeof l.target==='object'?l.target.id:l.target];
-      if(tn&&tn.type==='ch')return Math.min(75,GW*0.2);
-      return Math.min(45,GW*0.12);
-    }).strength(l=>l.cross?.05:.75))
-    .force('charge',d3.forceManyBody().strength(d=>d.type==='doc'?-600:-200).distanceMax(300))
-    .force('collide',d3.forceCollide().radius(d=>nrad(d)+(d.type==='ch'?18:12)).strength(.95))
-    .force('center',d3.forceCenter(GW/2,GH/2).strength(.05))
-    .force('pin',()=>{
-      nodes.forEach(n=>{
-        if(n._pinX!=null){n.x=n._pinX;n.y=n._pinY;n.fx=n._pinX;n.fy=n._pinY;}
+  const TEXT_RESULTS=[
+    {id:'text-attention-19',docId:'doc-9d3eec8b',docName:'视觉注意力机制综述（王文冠）.pdf',page:19,title:'视觉注意力机制综述 — 第 19 页',snippet:'现在计算机视觉领域中，对视觉注意力机制的计算建模主要基于深度学习技术。'},
+    {id:'text-attention-3',docId:'doc-9d3eec8b',docName:'视觉注意力机制综述（王文冠）.pdf',page:3,title:'视觉注意力机制综述 — 第 3 页',snippet:'根据模型所采用的人类视觉注意力机制作用机理，可划分为自底向上与自顶向下模型。'},
+    {id:'text-deep-1',docId:'doc-b2613a49',docName:'深度学习研究综述（尹宝才）.pdf',page:1,title:'深度学习研究综述 — 第 1 页',snippet:'综述深度学习的结构特点、训练方法以及在语音、视觉等领域的应用。'}
+  ];
+  const BASE_GRAPH=window.GRAPH_DATA||{docs:{},nodes:[],edges:[]};
+  const PROMPTS=[
+    {id:'classify',name:'文档类型识别',desc:'判断文档类型与科学领域',sys:'你是一名文档分类专家。请严格依据输入内容进行分类。',user:'分析以下文档片段：{{sample}}'},
+    {id:'cloud',name:'云端术语抽取',desc:'从文本提取关键知识点与专业术语',sys:'你是一名科研术语抽取助手。',user:'请从以下内容提取术语：{{text}}'},
+    {id:'verify',name:'术语质量二次校验',desc:'审核术语是否为领域核心概念',sys:'你负责校验候选术语质量。',user:'候选术语：{{terms}}'},
+    {id:'weak',name:'分块术语抽取（弱模型）',desc:'轻量模型文本分块术语抽取',sys:'提取清晰、可复用的术语。',user:'文本块：{{chunk}}'},
+    {id:'strong',name:'分块术语抽取（强模型）',desc:'强模型对分块文本提取术语',sys:'你是科研知识抽取专家。',user:'文本块：{{chunk}}'},
+    {id:'score',name:'术语特异性评分',desc:'为候选术语评估领域特异性',sys:'对术语按 1-10 分评估特异性。',user:'术语：{{term}}'},
+    {id:'chunk',name:'LLM 智能分块',desc:'根据段落语义确定分块点',sys:'你负责识别语义边界。',user:'文本：{{text}}'},
+    {id:'normalize',name:'术语多轮规范化',desc:'合并同义变体与别名',sys:'规范化科研术语但不改变原意。',user:'术语列表：{{terms}}'},
+    {id:'full-graph',name:'全文图谱抽取',desc:'一次性提取标题树、实体与关系',sys:'你是专业的文档结构分析助手。',user:'完整文档：{{markedText}}'},
+    {id:'relation',name:'第二轮关系推断',desc:'基于实体列表与原文推断语义关系',sys:'你是知识图谱关系推断专家。',user:'实体列表：{{entityList}}'},
+    {id:'crosslink',name:'跨文档语义连线',desc:'判断不同文档的术语是否语义相关',sys:'判断候选知识对的跨文档关系。',user:'候选关系：{{lines}}'},
+    {id:'exam-detect',name:'试卷检测二次确认',desc:'判断文本来自试卷还是教材讲义',sys:'判断输入文本的文档类型。',user:'文本片段：{{sample}}'},
+    {id:'exam-concept',name:'考题概念抽取',desc:'分析每道试题考查的知识点',sys:'提取考题对应的知识点。',user:'题目：{{questionText}}'},
+    {id:'heading-cloud',name:'云端标题识别',desc:'按页识别结构性标题与层级',sys:'识别文档中的真实章节标题。',user:'页面文本：{{batchText}}'},
+    {id:'heading-refine',name:'标题精炼判断',desc:'结合上下文校验候选标题层级',sys:'校验标题并修正层级。',user:'候选块：{{blocks}}'},
+    {id:'heading-discover',name:'标题补充发现',desc:'判断可疑行是否为章节标题',sys:'补充发现遗漏的文档标题。',user:'可疑行：{{suspiciousBlocks}}'}
+  ];
+  const initialIdeas=()=>[
+    {id:'idea-8175e8dc',title:'CNN 与注意力机制的融合思路',content:'卷积神经网络和注意力机制可以结合使用。CNN 负责局部特征提取，注意力机制负责全局依赖建模；可对比不同融合位置对视觉任务表现的影响。',tags:['CNN','注意力机制','融合架构'],nodeId:'doc-fe466a6d_e_神经网络',nodeLabel:'神经网络',includeInGraph:true},
+    {id:'idea-2',title:'评估指标的跨论文对照',content:'整理不同视觉注意力研究采用的评估指标，建立指标定义、适用任务与局限性的对照表。',tags:['评估指标','待验证'],nodeId:'doc-9d3eec8b_e_评估指标',nodeLabel:'评估指标',includeInGraph:false}
+  ];
+  const state={
+    view:'documents',theme:'light',project:'all',docs:SAMPLE_DOCS.map(x=>({...x})),selectedDoc:'doc-b2613a49',docMode:'render',
+    nodes:BASE_GRAPH.nodes.filter(x=>x.type!=='idea').map(x=>({...x})),edges:BASE_GRAPH.edges.filter(x=>x.type!=='idea-link').map(x=>({...x})),
+    visible:new Set(),expanded:new Set(),selectedNode:null,selectedDocs:new Set(SAMPLE_DOCS.map(x=>x.id)),
+    legend:false,zoom:1,ideas:initialIdeas(),selectedIdea:'idea-8175e8dc',settingsTab:'model',promptId:'classify',
+    promptDraft:{},modelConfig:{provider:'stub',modelName:'',apiKey:'',baseUrl:''},contextNode:null,treeClosed:new Set(),buildTimer:null,
+    simulation:null,zoomBehavior:null,zoomTransform:d3.zoomIdentity,graphPositions:new Map(),nodeClickTimer:null,docPage:1,pdfVariant:{}
+  };
+  function rootId(docId){return docId}
+  SAMPLE_DOCS.forEach(d=>state.visible.add(rootId(d.id)));
+  function docById(id){return state.docs.find(d=>d.id===id)}
+  function nodeById(id){return state.nodes.find(n=>n.id===id)}
+  function edgeId(v){return typeof v==='object'?v.id:v}
+  function revealIncludedIdeaTargets(){
+    state.ideas.forEach(idea=>{if(!idea.includeInGraph||!idea.nodeId)return;const target=nodeById(idea.nodeId);if(!target)return;state.visible.add(rootId(target.docId));state.visible.add(target.id)});
+  }
+  revealIncludedIdeaTargets();
+  function toast(message,type='info'){
+    const el=document.createElement('div');el.className='toast '+type;
+    el.innerHTML='<span>'+esc(message)+'</span><button aria-label="关闭">×</button>';
+    $('#toastContainer').appendChild(el);el.querySelector('button').onclick=()=>el.remove();
+    setTimeout(()=>el.remove(),type==='error'?6000:3600);
+  }
+  function showConfirm(title,message,onConfirm,confirmText='确认'){
+    const host=$('#dialogOverlay');host.className='overlay';
+    host.innerHTML='<div class="dialog" role="dialog" aria-modal="true"><div class="dialog-head"><h3>'+esc(title)+'</h3></div><div class="dialog-body"><p class="dialog-copy">'+esc(message)+'</p></div><div class="dialog-foot"><button class="btn btn-sm" data-cancel>取消</button><button class="btn btn-sm btn-primary" data-ok>'+esc(confirmText)+'</button></div></div>';
+    host.querySelector('[data-cancel]').onclick=closeDialog;host.onclick=e=>{if(e.target===host)closeDialog()};
+    host.querySelector('[data-ok]').onclick=()=>{closeDialog();onConfirm&&onConfirm()};
+    host.querySelector('[data-cancel]').focus();
+  }
+  function closeDialog(){const h=$('#dialogOverlay');h.className='hidden';h.innerHTML=''}
+  function setView(view){
+    state.view=view;$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
+    $$('.view').forEach(v=>v.classList.remove('active'));$('#'+view+'View').classList.add('active');
+    renderSidebar();
+    if(view==='documents')renderDocuments();
+    if(view==='graph'){renderGraphView();requestAnimationFrame(renderGraph)}
+    if(view==='idea')renderIdeas();
+  }
+  function renderSidebar(){
+    if(state.view==='documents')renderDocSidebar();
+    else if(state.view==='graph')renderTreeSidebar();
+    else renderIdeaSidebar();
+  }
+  function renderDocSidebar(){
+    const hasImports=state.docs.some(d=>d.project==='imported');
+    const projectOptions='<option value="all">全部文档</option><option value="sample">预载样例论文</option>'+(hasImports?'<option value="imported">本地导入</option>':'');
+    const host=$('#sidebar');host.innerHTML='<div class="panel doc-side"><div class="panel-head"><div class="project-row"><span class="project-label">项目</span><select id="projectSelect" class="project-select">'+projectOptions+'</select><button id="importBtn" class="btn btn-sm btn-primary">'+icon('plus')+'导入</button></div></div><ul id="docList" class="doc-list" role="listbox"></ul></div>';
+    $('#projectSelect').value=state.project;
+    const shownDocs=state.project==='all'?state.docs:state.docs.filter(d=>(d.project||'sample')===state.project);
+    const list=$('#docList');
+    if(!shownDocs.length){list.innerHTML='<div class="empty">'+icon('doc')+'<h3>暂无文档</h3><p>导入研究资料，或切换项目查看样例。</p></div>'}
+    else shownDocs.forEach(d=>{
+      const li=document.createElement('li');li.className='doc-item'+(d.id===state.selectedDoc?' active':'');li.tabIndex=0;li.setAttribute('role','option');li.setAttribute('aria-selected',d.id===state.selectedDoc);
+      li.innerHTML='<span class="doc-icon">'+icon('doc')+'</span><div class="doc-info"><div class="doc-name" title="'+esc(d.name)+'">'+esc(d.name)+'</div><div class="doc-meta"><span class="tag green">已解析</span><span>'+esc(d.type||'PDF')+'</span><span>'+bytes(d.size||0)+'</span></div></div><button class="icon-btn doc-del" title="删除文档">'+icon('trash')+'</button>';
+      li.onclick=e=>{if(e.target.closest('.doc-del'))return;state.selectedDoc=d.id;state.docPage=1;renderDocSidebar();renderDocuments()};
+      li.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();li.click()}};
+      li.querySelector('.doc-del').onclick=e=>{e.stopPropagation();showConfirm('删除文档','确定删除「'+d.name+'」吗？体验数据可通过重置恢复。',()=>{state.docs=state.docs.filter(x=>x.id!==d.id);if(state.selectedDoc===d.id)state.selectedDoc=state.docs[0]?.id||null;renderDocSidebar();renderDocuments();toast('文档已从体验工作区移除','success')},'删除')};
+      list.appendChild(li);
+    });
+    $('#projectSelect').onchange=e=>{state.project=e.target.value;const visible=state.project==='all'?state.docs:state.docs.filter(d=>(d.project||'sample')===state.project);if(!visible.some(d=>d.id===state.selectedDoc)){state.selectedDoc=visible[0]?.id||null;state.docPage=1}renderDocSidebar();renderDocuments()};
+    $('#importBtn').onclick=()=>$('#fileInput').click();
+  }
+  function pdfSources(d){
+    if(d.fileUrl)return [d.fileUrl];
+    const names=[...(d.fileCandidates||[]),d.file,d.name].filter(Boolean);
+    return Array.from(new Set(names)).map(name=>'sample_docs/'+encodeURIComponent(name));
+  }
+  function currentPdfSource(d){
+    const sources=pdfSources(d),index=Math.max(0,Math.min(sources.length-1,Number(state.pdfVariant[d.id])||0));
+    return {sources,index,source:sources[index]||''};
+  }
+  function switchPdfSource(d,step=1){
+    const sources=pdfSources(d);if(sources.length<2){toast('当前文献没有备用文件路径','warn');return}
+    state.pdfVariant[d.id]=((Number(state.pdfVariant[d.id])||0)+step+sources.length)%sources.length;renderDocuments();
+  }
+  function renderDocuments(){
+    const host=$('#documentsView'),d=docById(state.selectedDoc);
+    if(!d){host.innerHTML='<div class="editor"><div class="empty">'+icon('doc')+'<h3>从第一份资料开始构建知识库</h3><p>导入 PDF、Markdown 或文本，知源会整理内容并连接成图谱。</p><button id="emptyImport" class="btn btn-primary" style="margin-top:14px">导入本地文档</button></div></div>';$('#emptyImport').onclick=()=>$('#fileInput').click();return}
+    host.innerHTML='<div class="editor"><div class="editor-title"><span class="doc-icon">'+icon('doc')+'</span><h2 title="'+esc(d.name)+'">'+esc(d.name)+'</h2><div class="editor-meta"><span class="tag cyan">'+esc(d.type||'PDF')+'</span><span class="file-size">'+bytes(d.size||0)+'</span><div class="view-toggle"><button data-mode="render" class="'+(state.docMode==='render'?'active':'')+'">原始视图</button><button data-mode="text" class="'+(state.docMode==='text'?'active':'')+'">文本</button></div></div></div><div id="editorContent" class="editor-content"></div></div>';
+    $$('.view-toggle button').forEach(b=>b.onclick=()=>{state.docMode=b.dataset.mode;renderDocuments()});
+    const c=$('#editorContent');
+    if(state.docMode==='render'&&(d.file||d.fileUrl)){
+      const page=Math.max(1,Math.min(Number(d.pages)||9999,Number(state.docPage)||1));
+      const info=currentPdfSource(d),fullSource=info.source+'#page='+page+'&zoom=page-width';
+      c.innerHTML='<div class="pdf-shell"><div class="pdf-toolbar"><span class="pdf-toolbar-label">第 '+page+' 页 · '+esc(decodeURIComponent(info.source.split('/').pop()||d.name))+'</span>'+(info.sources.length>1?'<button id="pdfAlternate" class="btn btn-sm">切换备用路径</button>':'')+'<button id="pdfOpenExternal" class="btn btn-sm">新窗口打开</button></div><object id="pdfObject" class="pdf-object" data="'+fullSource+'" type="application/pdf" aria-label="'+esc(d.name)+'"><div class="pdf-fallback"><strong>浏览器未能在页面内渲染这份 PDF</strong><span>文件可能使用了当前浏览器不兼容的编码，或本地文件名与路径不一致。</span><div class="pdf-fallback-actions">'+(info.sources.length>1?'<button id="pdfFallbackAlternate" class="btn btn-primary">尝试备用文件名</button>':'')+'<button id="pdfFallbackExternal" class="btn">直接打开 PDF</button><button id="pdfFallbackText" class="btn">查看提取文本</button></div></div></object></div>';
+      const openExternal=()=>{const win=window.open(fullSource,'_blank','noopener');if(!win)toast('浏览器阻止了新窗口，请允许弹窗后重试','warn')};
+      $('#pdfOpenExternal').onclick=openExternal;$('#pdfFallbackExternal')&&($('#pdfFallbackExternal').onclick=openExternal);
+      $('#pdfAlternate')&&($('#pdfAlternate').onclick=()=>switchPdfSource(d));$('#pdfFallbackAlternate')&&($('#pdfFallbackAlternate').onclick=()=>switchPdfSource(d));
+      $('#pdfFallbackText')&&($('#pdfFallbackText').onclick=()=>{state.docMode='text';renderDocuments()});
+      const obj=$('#pdfObject');if(obj&&info.sources.length>1)obj.addEventListener('error',()=>{if((Number(state.pdfVariant[d.id])||0)===info.index){state.pdfVariant[d.id]=(info.index+1)%info.sources.length;renderDocuments()}},{once:true});
+    }else if(d.rawContent!=null){
+      c.innerHTML='<div class="text-preview"><article class="text-paper"><div class="text-kicker">LOCAL TEXT PREVIEW</div><h1>'+esc(d.name)+'</h1><pre style="white-space:pre-wrap;font:12px/1.75 var(--mono);color:var(--text-2)">'+esc(d.rawContent)+'</pre></article></div>';
+    }else{
+      const nodes=state.nodes.filter(n=>n.docId===d.id),heads=nodes.filter(n=>n.type==='heading').slice(0,9),ents=nodes.filter(n=>n.type==='entity').sort((a,b)=>(b.weight||0)-(a.weight||0)).slice(0,14);
+      c.innerHTML='<div class="text-preview"><article class="text-paper"><div class="text-kicker">CURATED KNOWLEDGE VIEW · '+esc(d.pages||'—')+' PAGES</div><h1>'+esc(d.name.replace(/\.pdf$/i,''))+'</h1><p>此处展示三篇固定文献的人工校准结构化结果；已剔除 OCR 残词、无意义标题和低置信度相似连接。图谱节点支持双击定位来源 PDF 页。</p><h2>识别到的结构</h2><ul class="extract-list">'+heads.map(n=>'<li>'+esc(n.label)+'</li>').join('')+'</ul><h2>高频知识实体</h2><div class="entity-cloud">'+ents.map(n=>'<span class="tag cyan">'+esc(n.label)+' · '+esc(n.weight)+'</span>').join('')+'</div></article></div>';
+    }
+  }
+  function handleFiles(files){
+    Array.from(files).forEach(file=>{
+      const id='local-'+Date.now()+'-'+Math.random().toString(16).slice(2);
+      const type=(file.name.split('.').pop()||'FILE').toUpperCase(),isPdf=type==='PDF';
+      const d={id,name:file.name,file:null,size:file.size,pages:null,type,project:'imported'};
+      if(isPdf)d.fileUrl=URL.createObjectURL(file);else file.text().then(text=>{d.rawContent=text;if(state.selectedDoc===id)renderDocuments()});
+      state.docs.unshift(d);state.project='imported';state.selectedDoc=id;state.docPage=1;state.docMode=isPdf?'render':'text';
+    });
+    renderDocSidebar();renderDocuments();toast('已导入到当前体验会话','success');
+  }
+  function renderTreeSidebar(){
+    const q=(state.treeQuery||'').toLowerCase();
+    const host=$('#sidebar');host.innerHTML='<div class="panel graph-side"><div class="panel-head"><div class="tree-title">'+icon('graph')+'<h2>知识节点</h2><span class="count">'+state.nodes.length+'</span></div></div><div class="tree-search">'+icon('search')+'<input id="treeSearch" type="search" placeholder="搜索节点..." value="'+esc(state.treeQuery||'')+'"></div><div id="treeBody" class="tree-body"></div></div>';
+    $('#treeSearch').oninput=e=>{state.treeQuery=e.target.value;renderTreeSidebar()};
+    const body=$('#treeBody');
+    SAMPLE_DOCS.forEach(d=>{
+      const ns=state.nodes.filter(n=>n.docId===d.id&&n.type!=='document'&&(!q||n.label.toLowerCase().includes(q))).sort((a,b)=>a.type.localeCompare(b.type)||(b.weight||0)-(a.weight||0));
+      if(q&&!ns.length)return;
+      const closed=state.treeClosed.has(d.id),head=document.createElement('button');head.className='tree-doc-head';
+      head.innerHTML='<span class="tree-caret '+(closed?'closed':'')+'">⌄</span><span class="tree-dot" style="color:'+DOC_COLORS[d.id]+';background:'+DOC_COLORS[d.id]+'"></span><strong title="'+esc(d.name)+'">'+esc(d.name)+'</strong><span class="count">'+ns.length+'</span>';
+      head.onclick=()=>{closed?state.treeClosed.delete(d.id):state.treeClosed.add(d.id);renderTreeSidebar()};body.appendChild(head);
+      if(!closed){
+        const kids=document.createElement('div');kids.className='tree-kids';
+        ns.slice(0,q?40:16).forEach(n=>{
+          const b=document.createElement('button');b.className='tree-node'+(state.selectedNode===n.id?' active':'');
+          b.innerHTML='<span class="tree-bar" style="background:'+DOC_COLORS[d.id]+'"></span><span title="'+esc(n.label)+'">'+esc(n.label)+'</span><span class="count">'+esc(n.weight||'')+'</span>';
+          b.onclick=()=>{state.selectedNode=n.id;state.visible.add(rootId(d.id));state.visible.add(n.id);renderTreeSidebar();renderGraph();toast('已在图谱中定位节点','success')};kids.appendChild(b);
+        });body.appendChild(kids);
+      }
+    });
+  }
+  function renderGraphView(){
+    const host=$('#graphView');
+    host.innerHTML='<div class="graph-view"><div class="graph-toolbar"><div class="toolbar-left"><div class="doc-picker"><label>选择文档</label><select id="graphDocs" multiple size="3">'+SAMPLE_DOCS.map(d=>'<option value="'+d.id+'" '+(state.selectedDocs.has(d.id)?'selected':'')+'>'+esc(d.name)+'</option>').join('')+'</select></div><button id="buildGraph" class="btn btn-primary">'+icon('bolt')+'构建图谱</button><button id="clearGraph" class="btn btn-sm">清空</button><button id="addNode" class="btn btn-sm">'+icon('plus')+'添加节点</button><span class="tool-sep"></span><button id="expandAll" class="btn btn-sm">'+icon('expand')+'全部展开</button><button id="collapseAll" class="btn btn-sm">'+icon('collapse')+'全部收起</button><button id="legendBtn" class="btn btn-sm">'+icon('legend')+'图例</button></div><div class="toolbar-right"><div class="stat-chip"><span class="stat-dot node"></span>节点 <b id="nodeStat">0/0</b></div><div class="stat-chip"><span class="stat-dot edge"></span>关系 <b id="edgeStat">0/0</b></div><div class="zoom-controls"><button class="zoom-btn" data-zoom="in">＋</button><span id="zoomLevel" class="zoom-level">100%</span><button class="zoom-btn" data-zoom="out">－</button><button class="zoom-btn" data-zoom="reset">'+icon('reset')+'</button></div></div></div><div id="graphCanvas" class="graph-canvas"><svg id="graphSvg" class="graph-svg"><g class="main-g"></g></svg><div class="graph-tip">单击逐层展开 · 双击定位来源页 · 拖拽节点 · 滚轮缩放</div><div id="graphTooltip" class="graph-tooltip hidden"></div><div id="legendBox" class="graph-legend '+(state.legend?'':'hidden')+'"><button class="legend-close">×</button><div class="legend-title">图例</div><div class="legend-row"><span class="legend-swatch" style="background:#06b6d4"></span>文档 / 标题 / 实体</div><div class="legend-row"><span style="width:18px;border-top:1px solid var(--text-3)"></span>同文档关系</div><div class="legend-row"><span style="width:18px;border-top:1px dashed var(--warm)"></span>跨文档关系</div><div class="legend-row"><span class="legend-swatch" style="height:12px;border-radius:8px;background:var(--rose)"></span>灵感胶囊节点</div><div class="legend-row"><span style="width:18px;border-top:1px dashed var(--rose)"></span>灵感关联</div><div class="legend-row">单击选中并突出相邻关系</div><div class="legend-row">双击知识节点打开来源 PDF</div></div></div></div>';
+    $('#graphDocs').onchange=e=>{state.selectedDocs=new Set(Array.from(e.target.selectedOptions,o=>o.value));state.visible=new Set(Array.from(state.selectedDocs,d=>rootId(d)));state.expanded.clear();state.graphPositions.clear();renderTreeSidebar();renderGraph()};
+    $('#buildGraph').onclick=runBuild;$('#clearGraph').onclick=()=>showConfirm('清空图谱','清空当前体验图谱？可再次构建或重置恢复。',()=>{state.nodes=[];state.edges=[];state.visible.clear();state.expanded.clear();state.graphPositions.clear();renderTreeSidebar();renderGraph();toast('图谱已清空','success')},'清空');
+    $('#addNode').onclick=()=>openNodeDialog();$('#expandAll').onclick=()=>{state.nodes.filter(n=>!n.docId||state.selectedDocs.has(n.docId)).forEach(n=>state.visible.add(n.id));state.nodes.forEach(n=>state.expanded.add(n.id));renderGraph()};
+    $('#collapseAll').onclick=()=>{state.visible=new Set(Array.from(state.selectedDocs,d=>rootId(d)));state.expanded.clear();state.selectedNode=null;renderGraph()};
+    $('#legendBtn').onclick=()=>{state.legend=!state.legend;$('#legendBox').classList.toggle('hidden',!state.legend)};
+    $('#legendBox .legend-close').onclick=()=>{state.legend=false;$('#legendBox').classList.add('hidden')};
+    $$('.zoom-btn').forEach(b=>b.onclick=()=>graphZoom(b.dataset.zoom));
+  }
+  function childrenOf(id){
+    const structural=state.edges.filter(e=>edgeId(e.source)===id&&(e.type==='contains'||e.type==='hierarchy')).map(e=>edgeId(e.target));
+    if(structural.length)return structural;
+    return state.edges.filter(e=>(e.type==='co-occurrence'||e.type==='cross-link')&&(edgeId(e.source)===id||edgeId(e.target)===id)).slice(0,7).map(e=>edgeId(e.source)===id?edgeId(e.target):edgeId(e.source));
+  }
+  function toggleNode(id){
+    const kids=childrenOf(id);
+    state.selectedNode=id;
+    if(!kids.length){renderGraph();renderTreeSidebar();return}
+    if(state.expanded.has(id)){collapseNode(id);state.expanded.delete(id)}
+    else{kids.forEach(k=>{const n=nodeById(k);if(n&&(!n.docId||state.selectedDocs.has(n.docId)))state.visible.add(k)});state.expanded.add(id)}
+    renderGraph(id);renderTreeSidebar();
+  }
+  function collapseNode(id,seen=new Set()){
+    if(seen.has(id))return;seen.add(id);
+    childrenOf(id).forEach(k=>{if(state.expanded.has(k))collapseNode(k,seen);state.visible.delete(k);state.expanded.delete(k);state.graphPositions.delete(k)});
+  }
+  function ideaGraphItems(){
+    const nodes=[],edges=[];
+    state.ideas.forEach(idea=>{
+      if(!idea.includeInGraph||!idea.nodeId)return;
+      const target=nodeById(idea.nodeId);if(!target)return;
+      nodes.push({id:idea.id,ideaId:idea.id,label:idea.title||'未命名灵感',content:idea.content||'',type:'idea',docId:target.docId,docName:'灵感 · '+(target.docName||docById(target.docId)?.name||''),page:sourcePage(target),weight:1,relatedNodeId:target.id});
+      edges.push({id:'idea-link-'+idea.id,source:idea.id,target:target.id,type:'idea-link',weight:1,ideaId:idea.id});
+    });
+    return {nodes,edges};
+  }
+  function nodeColor(n){return n.type==='idea'?stateColor('rose'):(DOC_COLORS[n.docId]||'#64748b')}
+  function edgeColor(e){return e.type==='idea-link'?stateColor('rose'):e.type==='cross-link'?stateColor('warm'):stateColor('text-3')}
+  function stateColor(name){return getComputedStyle($('#app')).getPropertyValue('--'+name).trim()}
+  function rememberGraphPositions(){
+    if(!state.simulation)return;
+    state.simulation.nodes().forEach(n=>{
+      if(Number.isFinite(n.x)&&Number.isFinite(n.y)){
+        const fx=n._tempPin?(n._savedFx??null):(n.fx??null),fy=n._tempPin?(n._savedFy??null):(n.fy??null);
+        state.graphPositions.set(n.id,{x:n.x,y:n.y,fx,fy});
+      }
+    });
+  }
+  function hashAngle(id){
+    let h=0;for(let i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))>>>0;
+    return (h%360)*Math.PI/180;
+  }
+  function softCenterForce(x,y,strength=.018){
+    let nodes=[];
+    function force(alpha){nodes.forEach(n=>{if(n.fx==null)n.vx+=(x-n.x)*strength*alpha;if(n.fy==null)n.vy+=(y-n.y)*strength*alpha})}
+    force.initialize=_=>{nodes=_};return force;
+  }
+  function sourcePage(n){
+    const candidates=[n.page,n.source?.page,n.meta?.page,Array.isArray(n.meta?.pages)?n.meta.pages[0]:null];
+    const raw=candidates.map(Number).find(Number.isFinite);
+    return Math.max(1,Math.round(raw||1));
+  }
+  function openNodeSource(n){
+    clearTimeout(state.nodeClickTimer);state.nodeClickTimer=null;
+    if(n.type==='idea'){
+      state.selectedIdea=n.ideaId||n.id;setView('idea');toast('已打开关联灵感','success');return;
+    }
+    if(!n.docId){toast('该节点没有关联来源文献','warn');return}
+    state.selectedDoc=n.docId;state.docPage=sourcePage(n);state.docMode='render';setView('documents');
+    toast('已定位到来源文献第 '+state.docPage+' 页','success');
+  }
+  function renderGraph(anchorId=null){
+    if(state.view!=='graph'||!$('#graphSvg'))return;
+    rememberGraphPositions();
+    if(state.simulation)state.simulation.stop();
+    const canvas=$('#graphCanvas'),w=Math.max(canvas.clientWidth,400),h=Math.max(canvas.clientHeight,300);
+    const ideaGraph=ideaGraphItems(),allNodes=[...state.nodes,...ideaGraph.nodes],allEdges=[...state.edges,...ideaGraph.edges];
+    const visibleNodes=allNodes.filter(n=>{
+      if(n.type==='idea')return state.visible.has(n.relatedNodeId)&&(!n.docId||state.selectedDocs.has(n.docId));
+      return state.visible.has(n.id)&&(!n.docId||state.selectedDocs.has(n.docId));
+    }).map(n=>{const saved=state.graphPositions.get(n.id);return saved?{...n,...saved}:{...n}});
+    const ids=new Set(visibleNodes.map(n=>n.id));
+    if(state.selectedNode&&!ids.has(state.selectedNode))state.selectedNode=null;
+    const visibleEdges=allEdges.filter(e=>ids.has(edgeId(e.source))&&ids.has(edgeId(e.target))).map(e=>({...e,source:edgeId(e.source),target:edgeId(e.target)}));
+    const byId=new Map(visibleNodes.map(n=>[n.id,n]));
+    const roots=visibleNodes.filter(n=>n.type==='document');
+    roots.forEach((n,i)=>{
+      if(!Number.isFinite(n.x)||!Number.isFinite(n.y)){
+        n.x=w*(i+1)/(roots.length+1);n.y=h*(.40+.10*(i%2));
+      }
+    });
+    visibleNodes.forEach(n=>{
+      if(Number.isFinite(n.x)&&Number.isFinite(n.y))return;
+      const edge=visibleEdges.find(e=>edgeId(e.source)===n.id||edgeId(e.target)===n.id);
+      const otherId=n.type==='idea'?n.relatedNodeId:(edge?(edgeId(edge.source)===n.id?edgeId(edge.target):edgeId(edge.source)):anchorId);
+      const parent=byId.get(otherId)||byId.get(anchorId);
+      const angle=hashAngle(n.id),radius=n.type==='idea'?112:68+(n.id.length%5)*13;
+      n.x=(parent?.x??w/2)+Math.cos(angle)*radius;
+      n.y=(parent?.y??h/2)+Math.sin(angle)*radius;
+    });
+    $('#nodeStat').textContent=visibleNodes.length+'/'+allNodes.length;$('#edgeStat').textContent=visibleEdges.length+'/'+allEdges.length;
+    const svg=d3.select('#graphSvg'),g=svg.select('.main-g');g.selectAll('*').remove();
+    state.zoomBehavior=d3.zoom().scaleExtent([.28,3]).on('zoom',e=>{state.zoomTransform=e.transform;state.zoom=e.transform.k;g.attr('transform',e.transform);$('#zoomLevel').textContent=Math.round(state.zoom*100)+'%'});
+    svg.call(state.zoomBehavior).on('dblclick.zoom',null);svg.call(state.zoomBehavior.transform,state.zoomTransform);
+    svg.on('click.selection',e=>{if(e.defaultPrevented)return;state.selectedNode=null;renderTreeSidebar();renderGraph()});
+    const links=g.append('g').selectAll('line').data(visibleEdges).join('line').attr('class',d=>'g-link'+(d.type==='cross-link'?' cross':d.type==='idea-link'?' idea':'')).attr('stroke',edgeColor).attr('stroke-opacity',d=>d.type==='idea-link' ? .72 : .32).attr('stroke-width',d=>Math.min(2.8,.7+(d.weight||1)*.3));
+    const groups=g.append('g').selectAll('g').data(visibleNodes,d=>d.id).join('g').attr('class',d=>'g-node '+d.type+(state.selectedNode===d.id?' selected':''))
+      .on('click',(e,d)=>{
+        if(e.defaultPrevented)return;e.stopPropagation();
+        clearTimeout(state.nodeClickTimer);
+        state.nodeClickTimer=setTimeout(()=>{state.nodeClickTimer=null;toggleNode(d.id)},230);
+      })
+      .on('dblclick',(e,d)=>{e.preventDefault();e.stopPropagation();clearTimeout(state.nodeClickTimer);state.nodeClickTimer=null;openNodeSource(d)})
+      .on('contextmenu',(e,d)=>{e.preventDefault();openContext(e,d)})
+      .on('mouseenter',(e,d)=>showGraphTip(e,d)).on('mouseleave',()=>$('#graphTooltip').classList.add('hidden'));
+    groups.each(function(d){
+      const sel=d3.select(this),label=d.label||d.name||d.id,root=d.type==='document',entity=d.type==='entity',idea=d.type==='idea';
+      const width=Math.max(root?150:idea?118:entity?64:92,Math.min(root?260:idea?230:190,label.length*(root?11:idea?9:8)+(idea?42:26))),height=root?36:idea?32:entity?24:30;
+      d.boxW=width;d.boxH=height;
+      sel.append('rect').attr('x',-width/2).attr('y',-height/2).attr('width',width).attr('height',height).attr('rx',root?6:idea?height/2:entity?12:4).attr('fill',nodeColor(d)).attr('fill-opacity',root?.9:idea?.88:entity?.72:.82).attr('stroke',state.selectedNode===d.id?'#fff':nodeColor(d)).attr('stroke-width',state.selectedNode===d.id?3.5:root?2:idea?1.8:1.4);
+      sel.append('text').attr('text-anchor','middle').attr('dy','.35em').text((idea?'💡 ':'')+(label.length>(root?28:idea?21:22)?label.slice(0,root?28:idea?21:22)+'…':label));
+      if(!idea&&childrenOf(d.id).length){sel.append('circle').attr('class','expand-dot').attr('cx',width/2).attr('cy',-height/2).attr('r',6);sel.append('text').attr('class','expand-glyph').attr('x',width/2).attr('y',-height/2+3).attr('text-anchor','middle').text(state.expanded.has(d.id)?'−':'+')}
+    });
+    const selectedId=state.selectedNode,neighbors=new Set(selectedId?[selectedId]:[]);
+    if(selectedId)visibleEdges.forEach(e=>{const source=edgeId(e.source),target=edgeId(e.target);if(source===selectedId)neighbors.add(target);if(target===selectedId)neighbors.add(source)});
+    groups.classed('selected',d=>d.id===selectedId).classed('related',d=>!!selectedId&&d.id!==selectedId&&neighbors.has(d.id)).attr('opacity',d=>!selectedId||neighbors.has(d.id)?1:.16);
+    groups.select('rect').attr('stroke',d=>d.id===selectedId?'#fff':nodeColor(d)).attr('stroke-width',d=>d.id===selectedId?3.5:d.type==='document'?2:d.type==='idea'?1.8:1.4);
+    links.attr('stroke',e=>{const source=edgeId(e.source),target=edgeId(e.target);return selectedId&&(source===selectedId||target===selectedId)?nodeColor(byId.get(selectedId)||{type:'manual'}):edgeColor(e)}).attr('stroke-opacity',e=>{if(!selectedId)return e.type==='idea-link' ? .72 : .32;const source=edgeId(e.source),target=edgeId(e.target);return (source===selectedId||target===selectedId) ? .98 : .045}).attr('stroke-width',e=>{const source=edgeId(e.source),target=edgeId(e.target);return selectedId&&(source===selectedId||target===selectedId)?Math.max(2.4,Math.min(3.3,1+(e.weight||1)*.35)):Math.min(2.8,.7+(e.weight||1)*.3)});
+    const hasSavedLayout=visibleNodes.some(n=>state.graphPositions.has(n.id));
+    if(hasSavedLayout){
+      visibleNodes.forEach(n=>{
+        const saved=state.graphPositions.get(n.id);
+        if(saved&&saved.fx==null&&saved.fy==null){n._tempPin=true;n._savedFx=null;n._savedFy=null;n.fx=n.x;n.fy=n.y}
       });
-    });
-  // boundary force - clamp nodes within visible area
-  sim.force('bounds',()=>{
-    const pad=35;
-    nodes.forEach(n=>{
-      if(n.type==='doc')return; // fixed
-      const r=nrad(n)+15;
-      if(n.x<pad+r)n.x=pad+r;
-      if(n.x>GW-pad-r)n.x=GW-pad-r;
-      if(n.y<pad+r)n.y=pad+r;
-      if(n.y>GH-pad-r-20)n.y=GH-pad-r-20; // leave room for tip bar
-    });
-  });
-  updGraph();
-  window.addEventListener('resize',()=>{
-    const w=panel.clientWidth,h=panel.clientHeight;
-    GW=w;GH=h;
-    svg.attr('width',w).attr('height',h);
-    sim.alpha(.3).restart();
-  });
-  // click empty to deselect
-  svg.on('click',()=>{selNode=null;linkSel&&linkSel.classed('hl',false);
-    document.querySelectorAll('.tn-c').forEach(x=>x.classList.remove('sel'));});
-}
-function findParentNode(n){
-  for(const l of links){
-    const tid=typeof l.target==='object'?l.target.id:l.target;
-    if(tid===n.id){
-      const sid=typeof l.source==='object'?l.source.id:l.source;
-      return nmap[sid];
     }
-  }
-  return null;
-}
-function nrad(d){if(d.type==='doc')return 28;if(d.type==='ch')return 10;return 5;}
-function ncol(d){
-  const hl=window._hlDoc;
-  if(d.type==='doc'){
-    if(hl&&d.doc!==hl)return '#edf2f7';
-    return COLORS[d.doc];
-  }
-  if(d.type==='ch'){
-    if(hl&&d.doc!==hl)return '#f0f4f8';
-    const c=d3.color(COLORS[d.doc]);return c.brighter(.5);
-  }
-  if(d.type==='ent'){
-    if(hl&&d.doc!==hl)return '#f0f4f8';
-    return entColor(d.name);
-  }
-  return '#a0aec0';
-}
-function updGraph(){
-  if(!sim)return;
-  const vN=nodes.filter(n=>n.vis);
-  // place newly visible nodes near their parent
-  const newByParent={};
-  vN.forEach(n=>{
-    if(n.type==='doc')return;
-    if(n.x!=null&&!isNaN(n.x))return; // already placed
-    const par=findParentNode(n);
-    if(par){
-      const pid=par.id;
-      if(!newByParent[pid])newByParent[pid]=[];
-      newByParent[pid].push(n);
-    }
-  });
-  // also count existing visible children per parent to offset angles
-  Object.entries(newByParent).forEach(([pid,newChildren])=>{
-    const par=nmap[pid];
-    // count existing visible siblings
-    let existingCount=0;
-    links.forEach(l=>{
-      const sid=typeof l.source==='object'?l.source.id:l.source;
-      if(sid===pid){
-        const tid=typeof l.target==='object'?l.target.id:l.target;
-        const cn=nmap[tid];
-        if(cn&&cn.vis&&cn.x!=null&&!isNaN(cn.x)&&!newChildren.includes(cn))existingCount++;
-      }
-    });
-    const totalCount=existingCount+newChildren.length;
-    newChildren.forEach((n,i)=>{
-        const chRad=Math.min(65,GW*0.18);
-        const radius=n.type==='ch'?chRad:chRad*0.55;
-        const angle=-Math.PI/2+((existingCount+i)/totalCount)*Math.PI*2;
-        n.x=par.x+Math.cos(angle)*radius;
-        n.y=par.y+Math.sin(angle)*radius;
+    state.simulation=d3.forceSimulation(visibleNodes)
+      .force('link',d3.forceLink(visibleEdges).id(d=>d.id).distance(d=>d.type==='idea-link' ? 112 : d.type==='cross-link' ? 145 : 105).strength(d=>d.type==='idea-link' ? .42 : .24))
+      .force('charge',d3.forceManyBody().strength(-360))
+      .force('center',softCenterForce(w/2,h/2,.018))
+      .force('collision',d3.forceCollide().radius(d=>Math.max(d.boxW||80,d.boxH||30)/2+20).strength(.85))
+      .alpha(hasSavedLayout?.22:.8).alphaDecay(hasSavedLayout?.11:.055)
+      .on('tick',()=>{
+        links.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+        groups.attr('transform',d=>'translate('+Math.max(30,Math.min(w-30,d.x))+','+Math.max(25,Math.min(h-25,d.y))+')');
+      })
+      .on('end',()=>{
+        visibleNodes.forEach(n=>{if(n._tempPin){n.fx=n._savedFx??null;n.fy=n._savedFy??null;n._tempPin=false}});
+        rememberGraphPositions();
       });
-  });
-  // fallback for any nodes without position
-  vN.forEach(n=>{
-    if(n.x==null||isNaN(n.x)){
-      n.x=GW/2+(Math.random()-.5)*80;
-      n.y=GH/2+(Math.random()-.5)*80;
-    }
-  });
-  const vL=links.filter(l=>{
-    const sid=typeof l.source==='object'?l.source.id:l.source,tid=typeof l.target==='object'?l.target.id:l.target;
-    return nmap[sid]&&nmap[sid].vis&&nmap[tid]&&nmap[tid].vis;
-  });
-  sim.nodes(vN);sim.force('link').links(vL);sim.alpha(.6).restart();
-  linkSel=g.selectAll('.link').data(vL,d=>(typeof d.source==='object'?d.source.id:d.source)+'-'+(typeof d.target==='object'?d.target.id:d.target));
-  linkSel.exit().remove();
-  const le=linkSel.enter().append('line').attr('class',d=>'link'+(d.cross?' cross':''));
-  linkSel=le.merge(linkSel);
-
-  nodeSel=g.selectAll('.node').data(vN,d=>d.id);
-  nodeSel.exit().remove();
-  const ne=nodeSel.enter().append('g').attr('class',d=>'node node-'+d.type)
-    .call(d3.drag().on('start',dragS).on('drag',dragM).on('end',dragE))
-    .on('click',(e,d)=>{
-      e.stopPropagation();
-      // delayed click to avoid conflict with dblclick
-      if(d._clkT){clearTimeout(d._clkT);}
-      d._clkT=setTimeout(()=>{
-        if(d.type==='doc'||d.type==='ch'){
-          togNode(d.id);
-        }
-        selN(d);
-        d._clkT=null;
-      },220);
-    })
-    .on('dblclick',(e,d)=>{
-      e.stopPropagation();
-      if(d._clkT){clearTimeout(d._clkT);d._clkT=null;}
-      jumpPDF(d.id);
-    })
-    .on('mouseover',(e,d)=>showTip(e,d)).on('mouseout',hideTip);
-
-  ne.filter(d=>d.type==='doc').append('rect')
-    .attr('width',d=>nrad(d)*2.2).attr('height',d=>nrad(d)*2.2)
-    .attr('x',d=>-nrad(d)*1.1).attr('y',d=>-nrad(d)*1.1).attr('rx',6)
-    .attr('fill',d=>ncol(d)).attr('stroke',d=>d3.color(ncol(d)).darker(.5))
-    .attr('stroke-width',1.5);
-  ne.filter(d=>d.type!=='doc').append('circle')
-    .attr('r',d=>nrad(d)).attr('fill',d=>ncol(d))
-    .attr('stroke',d=>d.type==='ch'?d3.color(ncol(d)).darker(.5):'#fff')
-    .attr('stroke-width',d=>d.type==='ch'?1.5:1.5);
-  // doc inner label
-  ne.filter(d=>d.type==='doc').append('text')
-    .attr('class','nlabel-doc-inner')
-    .attr('dy',5)
-    .attr('fill','#fff')
-    .style('font-size','11px')
-    .style('font-weight','700')
-    .style('pointer-events','none')
-    .style('text-anchor','middle')
-    .text(d=>{
-      if(d.doc==='doc1')return '注意力';
-      if(d.doc==='doc2')return '图卷积';
-      return '预训练';
-    });
-  // outer labels with white background
-  ne.append('text').attr('class','nlabel')
-    .attr('dy',d=>{
-      if(d.type==='doc')return nrad(d)*1.1+14;
-      return nrad(d)+11;
-    })
-    .style('font-size',d=>d.type==='doc'?'11px':'10px')
-    .style('font-weight',d=>d.type==='doc'?'600':'400')
-    .style('fill',d=>d.type==='doc'?'#2d3748':'#4a5568')
-    .style('text-anchor','middle')
-    .style('pointer-events','none')
-    .text(d=>{
-      if(d.type==='doc'){
-        return DOCSHORT[d.doc];
-      }
-      if(d.type==='ent')return d.name.length>6?d.name.substring(0,5)+'…':d.name;
-      // chapter: show "N 标题" but truncate long titles
-      const parts=d.name.split(' ');
-      if(parts.length>=2){
-        const num=parts[0],title=parts.slice(1).join(' ');
-        return title.length>5?num+' '+title.substring(0,5)+'…':d.name;
-      }
-      return d.name.length>7?d.name.substring(0,6)+'…':d.name;
-    });
-  nodeSel=ne.merge(nodeSel);
-  nodeSel.selectAll('rect').attr('fill',d=>ncol(d)).attr('stroke',d=>{
-    const hl=window._hlDoc;
-    if(hl&&d.doc!==hl)return '#e2e8f0';
-    return d3.color(ncol(d)).darker(.5);
-  });
-  nodeSel.selectAll('circle').attr('fill',d=>ncol(d)).attr('stroke',d=>{
-    const hl=window._hlDoc;
-    if(hl&&d.doc!==hl)return '#f0f4f8';
-    return d.type==='ch'?d3.color(ncol(d)).darker(.5):'#fff';
-  });
-  nodeSel.selectAll('.nlabel').style('fill',d=>{
-    const hl=window._hlDoc;
-    if(hl&&d.doc!==hl&&!d.cross)return '#cbd5e0';
-    return d.type==='doc'?'#2d3748':'#4a5568';
-  });
-  // update link opacity based on highlight
-  linkSel.classed('dim',l=>{
-    const hl=window._hlDoc;
-    if(!hl)return false;
-    const sid=typeof l.source==='object'?l.source.id:l.source;
-    const tid=typeof l.target==='object'?l.target.id:l.target;
-    const sdoc=nmap[sid]?.doc,tdoc=nmap[tid]?.doc;
-    return sdoc!==hl&&tdoc!==hl;
-  });
-
-  sim.on('tick',()=>{
-    linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
-    nodeSel.attr('transform',d=>`translate(${d.x},${d.y})`);
-  });
-}
-function selN(d){
-  selNode=d;
-  linkSel.classed('hl',l=>{
-    const sid=typeof l.source==='object'?l.source.id:l.source,tid=typeof l.target==='object'?l.target.id:l.target;
-    return sid===d.id||tid===d.id;
-  });
-  document.querySelectorAll('.tn-c').forEach(x=>x.classList.remove('sel'));
-  const te=document.querySelector(`.tn-c[data-n="${d.id}"]`);
-  if(te){te.classList.add('sel');te.scrollIntoView({block:'nearest',behavior:'smooth'});}
-}
-function showTip(e,d){
-  const t=document.getElementById('ttip');
-  let info='';
-  if(d.type==='doc'){info=`<b>${PAPERS[d.doc].title}</b><br>${PAPERS[d.doc].journal} (${PAPERS[d.doc].year})<br>${PAPERS[d.doc].authors}`;}
-  else if(d.type==='ch'){info=`<b>${d.name}</b><br>来自：${PAPERS[d.doc].title.substring(0,10)}…`;}
-  else{const tn={model:'模型',method:'方法',other:'其他'};
-    info=`<b>${d.name}</b><br>类型：${tn[d.et]||'其他'}<br>来自：${PAPERS[d.doc].title.substring(0,10)}…`;}
-  t.innerHTML=info;t.style.opacity='1';
-  const gr=document.getElementById('graphPanel').getBoundingClientRect();
-  t.style.left=(e.clientX-gr.left+12)+'px';t.style.top=(e.clientY-gr.top+12)+'px';
-}
-function hideTip(){document.getElementById('ttip').style.opacity='0';}
-function dragS(e,d){if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;}
-function dragM(e,d){d.fx=e.x;d.fy=e.y;}
-function dragE(e,d){
-  if(!e.active)sim.alphaTarget(0);
-  if(d.type!=='doc'){d.fx=null;d.fy=null;} // release non-doc nodes
-}
-
-// ============ JUMP TO PDF ============
-function jumpPDF(nid){
-  const n=nmap[nid];if(!n)return;
-  const d=n.doc;let tidx=0;
-  if(n.type!=='doc'){
-    const num=n.num;const p=PAPERS[d];
-    for(let i=0;i<p.pages.length;i++){
-      if(p.pages[i].cnt.includes('>'+num+' ')||p.pages[i].cnt.includes('>'+num+'<')){tidx=i;break;}
-    }
+    groups.call(d3.drag()
+      .on('start',(e,d)=>{clearTimeout(state.nodeClickTimer);d._tempPin=false;d._savedFx=d.x;d._savedFy=d.y;if(!e.active)state.simulation.alphaTarget(.12).restart();d.fx=d.x;d.fy=d.y})
+      .on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y})
+      .on('end',(e,d)=>{if(!e.active)state.simulation.alphaTarget(0);state.graphPositions.set(d.id,{x:d.x,y:d.y,fx:d.fx??null,fy:d.fy??null})}));
   }
-  const el=document.getElementById(`pg-${d}-${tidx}`);
-  if(el){
-    el.scrollIntoView({behavior:'smooth',block:'start'});
-    el.style.boxShadow='0 0 0 3px #4299e1, 0 2px 10px rgba(0,0,0,.12)';
-    setTimeout(()=>{el.style.boxShadow='';},1500);
+  function graphZoom(action){
+    const svg=d3.select('#graphSvg');if(!state.zoomBehavior)return;
+    if(action==='reset'){state.zoomTransform=d3.zoomIdentity;svg.transition().duration(220).call(state.zoomBehavior.transform,d3.zoomIdentity)}
+    else svg.transition().duration(180).call(state.zoomBehavior.scaleBy,action==='in'?1.25:.8);
   }
-}
-
-// ============ HIGHLIGHT ENTITY FROM PDF ============
-function highlightEntity(name){
-  // find visible entity node, or expand to find it
-  const en=nodes.find(n=>n.type==='ent'&&n.name===name&&n.vis);
-  if(en){
-    ensureExp(en.id);selN(en);
-    if(en.x&&en.y){
-      const p=document.getElementById('graphPanel');
-      const tx=p.clientWidth/2-en.x,ty=p.clientHeight/2-en.y;
-      svg.transition().duration(400).call(d3.zoom().transform,d3.zoomIdentity.translate(tx,ty).scale(1));
-    }
-    // highlight in PDF
-    document.querySelectorAll('.pdf-page .ent').forEach(e=>e.classList.toggle('hl',e.dataset.e===name));
-    // select in tree
-    document.querySelectorAll('.tn-c').forEach(x=>x.classList.remove('sel'));
-    document.querySelectorAll('.tn-c').forEach(x=>{
-      const lbl=x.querySelector('.tn-label');
-      if(lbl&&lbl.textContent===name){
-        x.classList.add('sel');
-        let par=x.closest('.tn-children');
-        while(par){par.classList.add('show');
-          const pid=par.dataset.p;
-          const ar=document.querySelector(`.tn-c[data-n="${pid}"] .tn-arrow`);
-          if(ar)ar.classList.add('exp');
-          if(nmap[pid])nmap[pid].exp=true;
-          par=par.parentElement.closest('.tn-children');
-        }
-      }
-    });
-  }else{
-    // entity not visible - find which doc/chapter contains it and expand
-    let expanded=false;
-    ['doc1','doc2','doc3'].forEach(d=>{
-      const p=PAPERS[d];
-      const dn=nmap[d];
-      (p.chs||[]).forEach(ch=>{
-        let inCh=(ch.es||[]).includes(name);
-        let inSub=false;
-        if(!inCh&&ch.subs){
-          ch.subs.forEach(s=>{if((s.es||[]).includes(name))inSub=true;});
-        }
-        if(inCh||inSub){
-          if(!dn.exp){togNode(d.id);expanded=true;}
-          // also expand the specific chapter
-          const chn=nmap[ch.id];
-          if(chn&&!chn.exp){
-            setTimeout(()=>{
-              if(!chn.exp)togNode(ch.id);
-            },expanded?300:0);
-            expanded=true;
-          }
-        }
-      });
-    });
-    setTimeout(()=>highlightEntity(name),expanded?350:100);
+  function showGraphTip(e,n){
+    const t=$('#graphTooltip'),r=$('#graphCanvas').getBoundingClientRect();t.classList.remove('hidden');
+    t.innerHTML='<strong>'+esc(n.label||n.name||n.id)+'</strong><small>'+(n.type==='idea'?'灵感胶囊 · 双击打开编辑':esc(n.type)+' · '+esc(n.docName||'手动节点'))+'</small><small>'+(n.type==='idea'?'与关联知识节点同步显示':'来自人工校准的知识图谱样例')+'</small>';
+    t.style.left=Math.min(r.width-270,e.clientX-r.left+12)+'px';t.style.top=Math.min(r.height-80,e.clientY-r.top+12)+'px';
   }
-}
-function ensureExp(nid){
-  links.forEach(l=>{
-    const tid=typeof l.target==='object'?l.target.id:l.target;
-    if(tid===nid){
-      const sid=typeof l.source==='object'?l.source.id:l.source;
-      const par=nmap[sid];
-      if(par&&!par.exp){
-        const cd=document.querySelector(`.tn-children[data-p="${sid}"]`);
-        const ar=document.querySelector(`.tn-c[data-n="${sid}"] .tn-arrow`);
-        if(cd&&!cd.classList.contains('show')){cd.classList.add('show');if(ar)ar.classList.add('exp');par.exp=true;}
-        par.vis=true;expandGraph(sid);ensureExp(sid);
-      }
-    }
+  function openContext(e,n){
+    state.contextNode=n.id;const m=$('#contextMenu');m.classList.remove('hidden');m.style.left=Math.min(innerWidth-155,e.clientX)+'px';m.style.top=Math.min(innerHeight-85,e.clientY)+'px';
+    m.innerHTML='<button data-edit>'+icon('edit')+' 编辑节点</button><button data-delete class="danger">'+icon('trash')+' 删除节点</button>';
+    m.querySelector('[data-edit]').onclick=()=>{m.classList.add('hidden');openNodeDialog(n)};
+    m.querySelector('[data-delete]').onclick=()=>{m.classList.add('hidden');showConfirm('删除节点','删除节点「'+(n.label||n.id)+'」及其关联边？',()=>{state.nodes=state.nodes.filter(x=>x.id!==n.id);state.edges=state.edges.filter(x=>edgeId(x.source)!==n.id&&edgeId(x.target)!==n.id);state.ideas.forEach(i=>{if(i.nodeId===n.id){i.nodeId=null;i.nodeLabel=null;i.includeInGraph=false}});state.visible.delete(n.id);renderTreeSidebar();renderGraph();toast('节点已删除','success')},'删除')};
+  }
+  function openNodeDialog(node=null){
+    const host=$('#dialogOverlay');host.className='overlay';const isNew=!node;
+    host.innerHTML='<div class="dialog" role="dialog" aria-modal="true"><div class="dialog-head"><h3>'+(isNew?'添加节点':'编辑节点')+'</h3><button class="icon-btn" data-x>'+icon('close')+'</button></div><div class="dialog-body"><div class="field"><label>节点名称</label><input id="nodeLabel" type="text" value="'+esc(node?.label||'')+'" placeholder="输入节点名称"></div><div class="field"><label>节点类型</label><select id="nodeType"><option value="entity">实体</option><option value="concept">概念</option><option value="heading">标题</option><option value="idea">灵感</option><option value="manual">手动节点</option></select></div><div class="field"><label>所属文档</label><select id="nodeDoc"><option value="">无</option>'+SAMPLE_DOCS.map(d=>'<option value="'+d.id+'">'+esc(d.name)+'</option>').join('')+'</select></div></div><div class="dialog-foot"><button class="btn btn-sm" data-cancel>取消</button><button class="btn btn-sm btn-primary" data-save>保存</button></div></div>';
+    $('#nodeType').value=node?.type||'entity';$('#nodeDoc').value=node?.docId||'';host.querySelector('[data-x]').onclick=host.querySelector('[data-cancel]').onclick=closeDialog;
+    host.querySelector('[data-save]').onclick=()=>{const label=$('#nodeLabel').value.trim();if(!label){toast('请输入节点名称','warn');return}const docId=$('#nodeDoc').value,type=$('#nodeType').value;if(node){const original=nodeById(node.id);original.label=label;original.type=type;original.docId=docId;original.docName=docById(docId)?.name||''}else{const id='manual-'+Date.now();state.nodes.push({id,label,type,docId,docName:docById(docId)?.name||'',weight:1});state.visible.add(id);state.selectedNode=id}closeDialog();renderTreeSidebar();renderGraph();toast(isNew?'节点已添加':'节点已保存','success')};
+    $('#nodeLabel').focus();
+  }
+  function runBuild(){
+    if(!state.selectedDocs.size){toast('请至少选择一篇文档','warn');return}
+    const canvas=$('#graphCanvas');canvas.insertAdjacentHTML('beforeend','<div id="buildProgress" class="build-progress"><div class="build-card"><div class="build-title"><span class="spinner"></span><span>正在载入人工校准知识图谱</span></div><div class="build-meta"><span id="buildStep">准备文档结构</span><b id="buildPct">12%</b></div><div class="progress"><span id="buildBar" style="width:12%"></span></div><p class="hint">体验窗口不调用真实模型；当前三篇固定文献采用人工校准节点与语义关系，桌面端仍可使用模型自动构建。</p></div></div>');
+    const steps=[[32,'读取人工策划的文献结构'],[61,'载入文档内语义关系'],[84,'载入跨文献主题连接'],[100,'完成布局']];
+    let i=0;clearInterval(state.buildTimer);state.buildTimer=setInterval(()=>{const s=steps[i++];if(!s)return;$('#buildPct').textContent=s[0]+'%';$('#buildBar').style.width=s[0]+'%';$('#buildStep').textContent=s[1];if(s[0]===100){clearInterval(state.buildTimer);setTimeout(()=>{state.nodes=BASE_GRAPH.nodes.filter(x=>x.type!=='idea').map(x=>({...x}));state.edges=BASE_GRAPH.edges.filter(x=>x.type!=='idea-link').map(x=>({...x}));state.visible=new Set(Array.from(state.selectedDocs,d=>rootId(d)));revealIncludedIdeaTargets();state.expanded.clear();state.graphPositions.clear();$('#buildProgress')?.remove();renderTreeSidebar();renderGraph();toast('人工校准图谱已载入：'+state.nodes.length+' 个节点 · '+state.edges.length+' 条关系','success')},260)}},330);
+  }
+  function renderIdeaSidebar(){
+    const host=$('#sidebar');host.innerHTML='<div class="panel idea-side"><div class="panel-head"><h2>Idea 灵感</h2><span class="panel-head-spacer"></span><button id="newIdea" class="btn btn-sm btn-primary">'+icon('plus')+'新建</button></div><div id="ideaCards" class="idea-cards"></div></div>';
+    const box=$('#ideaCards');if(!state.ideas.length)box.innerHTML='<div class="empty">'+icon('idea')+'<h3>还没有灵感记录</h3><p>点击「新建」开始记录</p></div>';
+    state.ideas.forEach(i=>{const c=document.createElement('article');c.className='idea-card'+(state.selectedIdea===i.id?' active':'');c.innerHTML='<h3>'+esc(i.title||'未命名灵感')+'</h3><p>'+esc(i.content||'暂无内容')+'</p><div class="idea-tags">'+(i.includeInGraph?'<span class="tag rose">图谱中</span>':'')+(i.tags||[]).map(t=>'<span class="tag cyan">'+esc(t)+'</span>').join('')+'</div>';c.onclick=()=>{state.selectedIdea=i.id;renderIdeaSidebar();renderIdeas()};box.appendChild(c)});
+    $('#newIdea').onclick=()=>{const id='idea-'+Date.now();state.ideas.unshift({id,title:'未命名灵感',content:'',tags:[],nodeId:null,nodeLabel:null,includeInGraph:false});state.selectedIdea=id;renderIdeaSidebar();renderIdeas();setTimeout(()=>$('#ideaTitle')?.select(),0)};
+  }
+  function renderIdeas(){
+    const host=$('#ideaView'),idea=state.ideas.find(i=>i.id===state.selectedIdea);
+    host.innerHTML='<div class="panel idea-editor"><div class="panel-head"><h2>'+(idea?'编辑灵感':'灵感编辑器')+'</h2><span class="panel-head-spacer"></span>'+(idea?'<button id="deleteIdea" class="btn btn-sm btn-danger">'+icon('trash')+'删除</button>':'')+'</div><div id="ideaForm" class="panel-body idea-form"></div></div>';
+    const form=$('#ideaForm');if(!idea){form.innerHTML='<div class="empty">'+icon('idea')+'<h3>选择一个灵感或新建灵感</h3><p>在此编辑内容并关联知识节点</p></div>';return}
+    form.innerHTML='<div class="field"><label>标题</label><input id="ideaTitle" type="text" value="'+esc(idea.title)+'" placeholder="灵感标题"></div><div class="field"><label>内容</label><textarea id="ideaContent" rows="11" placeholder="记录你的灵感、思路与发现...">'+esc(idea.content)+'</textarea></div><div class="field"><label>标签（逗号分隔）</label><input id="ideaTags" type="text" value="'+esc((idea.tags||[]).join(', '))+'" placeholder="知识图谱, 待验证"></div>'+(idea.nodeId?'<div class="linked-node">'+icon('link')+'<span>已关联节点：'+esc(idea.nodeLabel||idea.nodeId)+'</span></div>':'')+'<label class="idea-toggle"><input id="ideaIncludeGraph" type="checkbox" '+(idea.includeInGraph?'checked':'')+'><span><strong>在知识图谱中显示</strong><small>以胶囊节点显示，并自然连接到已关联的知识节点</small></span></label><div class="form-actions"><button id="saveIdea" class="btn btn-primary">保存</button><button id="linkIdea" class="btn">'+icon('link')+'关联节点</button></div>';
+    $('#saveIdea').onclick=()=>{idea.title=$('#ideaTitle').value.trim()||'未命名灵感';idea.content=$('#ideaContent').value;idea.tags=$('#ideaTags').value.split(/[,，]/).map(x=>x.trim()).filter(Boolean);idea.includeInGraph=$('#ideaIncludeGraph').checked;if(idea.includeInGraph&&!idea.nodeId){idea.includeInGraph=false;toast('请先关联知识节点，再启用图谱显示','warn')}if(idea.includeInGraph)revealIncludedIdeaTargets();else state.graphPositions.delete(idea.id);renderIdeaSidebar();renderIdeas();toast('灵感已保存','success')};
+    $('#linkIdea').onclick=()=>openLinkDialog(idea);$('#deleteIdea').onclick=()=>showConfirm('删除灵感','确定删除「'+idea.title+'」吗？',()=>{state.ideas=state.ideas.filter(i=>i.id!==idea.id);state.graphPositions.delete(idea.id);if(state.selectedNode===idea.id)state.selectedNode=null;state.selectedIdea=state.ideas[0]?.id||null;renderIdeaSidebar();renderIdeas();toast('灵感已删除','success')},'删除');
+  }
+  function openLinkDialog(idea){
+    const host=$('#dialogOverlay');host.className='overlay';host.innerHTML='<div class="dialog"><div class="dialog-head"><h3>关联知识节点</h3><button class="icon-btn" data-x>'+icon('close')+'</button></div><div class="dialog-body"><input id="linkSearch" type="search" placeholder="搜索节点..."><div id="nodeOptions" class="node-options"></div></div><div class="dialog-foot"><button class="btn btn-sm" data-cancel>取消</button><button class="btn btn-sm btn-primary" data-save>关联</button></div></div>';
+    let selected=idea.nodeId;const render=q=>{const opts=state.nodes.filter(n=>n.type!=='document'&&(!q||(n.label||'').toLowerCase().includes(q.toLowerCase()))).slice(0,35);$('#nodeOptions').innerHTML=opts.map(n=>'<button class="node-option '+(selected===n.id?'active':'')+'" data-id="'+esc(n.id)+'"><span class="tree-dot" style="background:'+nodeColor(n)+'"></span><span>'+esc(n.label||n.id)+'</span></button>').join('');$$('.node-option').forEach(b=>b.onclick=()=>{selected=b.dataset.id;render($('#linkSearch').value)})};render('');$('#linkSearch').oninput=e=>render(e.target.value);host.querySelector('[data-x]').onclick=host.querySelector('[data-cancel]').onclick=closeDialog;host.querySelector('[data-save]').onclick=()=>{if(!selected){toast('请选择一个节点','warn');return}idea.nodeId=selected;idea.nodeLabel=nodeById(selected)?.label||selected;state.graphPositions.delete(idea.id);if(idea.includeInGraph)revealIncludedIdeaTargets();closeDialog();renderIdeas();renderIdeaSidebar();toast('已关联知识节点；启用“在知识图谱中显示”后会生成胶囊节点','success')};$('#linkSearch').focus();
+  }
+  function openSettings(tab=state.settingsTab){
+    state.settingsTab=tab;const host=$('#settingsOverlay');host.className='overlay';host.innerHTML='<div class="settings-modal" role="dialog" aria-modal="true"><header class="settings-head"><h2>'+icon('settings')+'设置</h2><button id="closeSettings" class="icon-btn">'+icon('close')+'</button></header><div class="settings-body"><nav class="settings-nav"><button class="settings-tab" data-tab="model">'+icon('settings')+'模型配置</button><button class="settings-tab" data-tab="prompts">'+icon('doc')+'提示词模板<span class="count">16</span></button><button class="settings-tab" data-tab="about">ⓘ 关于</button></nav><div class="settings-content"><section id="settingsModel" class="settings-page"></section><section id="settingsPrompts" class="settings-page"></section><section id="settingsAbout" class="settings-page"></section></div></div></div>';
+    $('#closeSettings').onclick=closeSettings;host.onclick=e=>{if(e.target===host)closeSettings()};$$('.settings-tab').forEach(b=>b.onclick=()=>{state.settingsTab=b.dataset.tab;renderSettingsPage()});renderSettingsPage();
+  }
+  function closeSettings(){const h=$('#settingsOverlay');h.className='hidden';h.innerHTML=''}
+  function renderSettingsPage(){
+    $$('.settings-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.settingsTab));$$('.settings-page').forEach(p=>p.classList.remove('active'));
+    if(state.settingsTab==='model')renderModelSettings();else if(state.settingsTab==='prompts')renderPromptSettings();else renderAbout();
+  }
+  function renderModelSettings(){
+    const p=$('#settingsModel');p.classList.add('active');p.innerHTML='<div class="settings-card"><div class="settings-card-head"><h3>模型配置</h3><span class="tag violet">体验模式</span></div><div class="settings-card-body"><div class="field"><label>服务商 Provider</label><select id="provider"><option value="stub">Stub（本地模拟）</option><option value="openai">OpenAI 兼容</option><option value="ollama">Ollama 本地模型</option></select><div class="hint">体验窗口固定载入人工校准图谱，不会发送 API 请求。</div></div><div class="field-row"><div class="field"><label>模型名称 Model</label><input id="modelName" type="text" placeholder="例如 gpt-4o-mini"></div><div class="field"><label>API Key</label><input id="apiKey" type="password" placeholder="体验模式无需 API Key"></div></div><div class="field"><label>Base URL</label><input id="baseUrl" type="text" placeholder="https://api.openai.com/v1"><div class="hint">真实桌面端支持 OpenAI 兼容接口与本地 Ollama。</div></div><div class="form-actions"><button id="testModel" class="btn btn-primary">测试连接</button><button id="saveModel" class="btn">保存配置</button></div><div id="modelResult"></div></div></div>';
+    const cfg=state.modelConfig;$('#provider').value=cfg.provider;$('#modelName').value=cfg.modelName;$('#apiKey').value=cfg.apiKey;$('#baseUrl').value=cfg.baseUrl;
+    $('#testModel').onclick=()=>{const r=$('#modelResult');r.innerHTML='<div class="linked-node" style="margin-top:12px">'+icon('bolt')+'人工校准图谱已就绪。体验窗口未发起真实模型请求。</div>';toast('体验模式校验通过','success')};
+    $('#saveModel').onclick=()=>{state.modelConfig={provider:$('#provider').value,modelName:$('#modelName').value.trim(),apiKey:$('#apiKey').value,baseUrl:$('#baseUrl').value.trim()};toast('配置已保存到当前体验会话','success')};
+  }
+  function renderPromptSettings(){
+    const p=$('#settingsPrompts');p.classList.add('active');const task=PROMPTS.find(x=>x.id===state.promptId)||PROMPTS[0],draft=state.promptDraft[task.id]||{sys:task.sys,user:task.user};
+    p.innerHTML='<div class="prompt-grid"><aside class="prompt-list"><div class="prompt-list-head"><h3>LLM 任务</h3><span class="count">16</span></div><div class="prompt-tasks">'+PROMPTS.map(t=>'<button class="prompt-task '+(t.id===task.id?'active':'')+'" data-prompt="'+t.id+'"><strong>'+esc(t.name)+'</strong><small>'+esc(t.desc)+'</small></button>').join('')+'</div></aside><div class="prompt-editor"><div class="settings-card"><div class="settings-card-head"><h3>'+esc(task.name)+'</h3><span class="tag amber">预览编辑</span></div><div class="settings-card-body"><div class="field"><label>System Prompt（系统提示词）</label><textarea id="promptSys">'+esc(draft.sys)+'</textarea></div><div class="field"><label>User Prompt（用户提示词）</label><textarea id="promptUser">'+esc(draft.user)+'</textarea></div><div class="vars"><span>检测到的变量：</span>'+Array.from((draft.sys+' '+draft.user).matchAll(/{{(.*?)}}/g),m=>m[1]).map(v=>'<span class="tag violet">{{'+esc(v)+'}}</span>').join('')+'</div><div class="form-actions"><button id="savePrompt" class="btn btn-primary">保存模板</button><button id="testPrompt" class="btn">测试运行</button></div><div id="promptResult"></div></div></div></div></div>';
+    $$('.prompt-task').forEach(b=>b.onclick=()=>{state.promptDraft[task.id]={sys:$('#promptSys').value,user:$('#promptUser').value};state.promptId=b.dataset.prompt;renderPromptSettings()});
+    $('#savePrompt').onclick=()=>{state.promptDraft[task.id]={sys:$('#promptSys').value,user:$('#promptUser').value};toast('模板已保存到当前体验会话','success')};
+    $('#testPrompt').onclick=()=>{$('#promptResult').innerHTML='<div class="linked-node" style="margin-top:12px">'+icon('bolt')+'模板渲染完成；体验窗口不会调用真实模型。</div>'};
+  }
+  function renderAbout(){
+    const p=$('#settingsAbout');p.classList.add('active');p.innerHTML='<div class="about"><svg class="about-logo" viewBox="0 0 24 24" fill="none"><path d="M12 2 2 7v10l10 5 10-5V7z" stroke="url(#about-grad)" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="url(#about-grad)"/><defs><linearGradient id="about-grad"><stop stop-color="#06b6d4"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg><h2>知源 KnowSource</h2><div class="about-version">v2.3.0 · CURATED GRAPH DEMO</div><p class="about-desc">科研知识工作台 — 多文献阅读、知识网络构建与灵感记录</p><div class="feature-list"><div class="feature">'+icon('doc')+'多格式文献导入与阅读</div><div class="feature">'+icon('graph')+'知识图谱构建与探索</div><div class="feature">'+icon('idea')+'灵感记录与知识关联</div></div><button id="aboutReset" class="btn btn-sm">'+icon('reset')+'重置体验数据</button></div>';$('#aboutReset').onclick=()=>{closeSettings();confirmReset()};
+  }
+  function searchAll(q){
+    const panel=$('#searchPanel');if(!q.trim()){panel.innerHTML='<div class="search-empty">输入文献、节点或灵感关键词</div>';panel.classList.remove('hidden');return}
+    const query=q.trim().toLowerCase(),docs=state.docs.filter(d=>d.name.toLowerCase().includes(query)).slice(0,5),texts=TEXT_RESULTS.filter(x=>(x.title+' '+x.snippet+' '+x.docName).toLowerCase().includes(query)).slice(0,5),nodes=state.nodes.filter(n=>(n.label||'').toLowerCase().includes(query)).slice(0,8),ideas=state.ideas.filter(i=>(i.title+' '+i.content+' '+i.tags.join(' ')).toLowerCase().includes(query)).slice(0,5);
+    const group=(name,items,kind)=>items.length?'<div class="search-group-title">'+name+'</div>'+items.map(x=>{const page=(kind==='node'||kind==='text')&&Number.isFinite(Number(x.page))&&Number(x.page)>0?' · 第 '+Number(x.page)+' 页':'';const meta=kind==='doc'?'文献':kind==='text'?'原文片段 · '+esc(x.docName)+page:kind==='node'?'知识节点 · '+esc(x.docName||'手动节点')+page:'灵感记录';const snippet=kind==='text'?'<span class="search-result-snippet">'+esc(x.snippet)+'</span>':'';return '<button class="search-result" data-kind="'+kind+'" data-id="'+esc(x.id)+'"><span class="search-result-icon">'+icon(kind==='doc'||kind==='text'?'doc':kind==='node'?'graph':'idea')+'</span><span class="search-result-main"><span class="search-result-title">'+esc(x.name||x.label||x.title)+'</span><span class="search-result-meta">'+meta+'</span>'+snippet+'</span></button>'}).join(''):'';
+    panel.innerHTML='<div class="search-head">搜索 “'+esc(q)+'”</div><div class="search-results">'+group('文献',docs,'doc')+group('原文片段',texts,'text')+group('知识节点',nodes,'node')+group('灵感',ideas,'idea')+(!docs.length&&!texts.length&&!nodes.length&&!ideas.length?'<div class="search-empty">没有匹配结果</div>':'')+'</div>';panel.classList.remove('hidden');
+    $$('.search-result').forEach(b=>b.onclick=()=>{if(b.dataset.kind==='doc'){state.selectedDoc=b.dataset.id;state.docPage=1;setView('documents')}else if(b.dataset.kind==='text'){const result=TEXT_RESULTS.find(x=>x.id===b.dataset.id);state.selectedDoc=result.docId;state.docPage=Math.max(1,Number(result.page)||1);state.docMode='render';setView('documents');toast('已打开来源文献第 '+state.docPage+' 页','success')}else if(b.dataset.kind==='node'){const n=nodeById(b.dataset.id);state.selectedNode=n.id;state.visible.add(rootId(n.docId));state.visible.add(n.id);setView('graph')}else{state.selectedIdea=b.dataset.id;setView('idea')}panel.classList.add('hidden')});
+  }
+  function confirmReset(){showConfirm('重置产品体验','恢复三份样例文献、人工校准图谱、灵感与默认主题？',resetAll,'重置')}
+  function resetAll(){
+    state.docs=SAMPLE_DOCS.map(x=>({...x}));state.selectedDoc='doc-b2613a49';state.docPage=1;state.docMode='render';state.nodes=BASE_GRAPH.nodes.filter(x=>x.type!=='idea').map(x=>({...x}));state.edges=BASE_GRAPH.edges.filter(x=>x.type!=='idea-link').map(x=>({...x}));
+    state.project='all';state.selectedDocs=new Set(SAMPLE_DOCS.map(x=>x.id));state.visible=new Set(SAMPLE_DOCS.map(d=>rootId(d.id)));revealIncludedIdeaTargets();state.expanded.clear();state.graphPositions.clear();clearTimeout(state.nodeClickTimer);state.nodeClickTimer=null;state.selectedNode=null;state.ideas=initialIdeas();state.selectedIdea='idea-8175e8dc';state.pdfVariant={};state.promptDraft={};state.modelConfig={provider:'stub',modelName:'',apiKey:'',baseUrl:''};state.treeClosed.clear();setView('documents');toast('产品体验已重置','success');
+  }
+  $$('.nav-btn').forEach(b=>b.onclick=()=>setView(b.dataset.view));
+  $('#settingsBtn').onclick=()=>openSettings();$('#resetBtn').onclick=confirmReset;
+  $('#themeBtn').onclick=()=>{state.theme=state.theme==='dark'?'light':'dark';$('#app').dataset.theme=state.theme;if(state.view==='graph')renderGraph();toast(state.theme==='dark'?'已切换暗色主题':'已切换亮色主题','success')};
+  $('#globalSearch').onfocus=e=>searchAll(e.target.value);$('#globalSearch').oninput=e=>searchAll(e.target.value);
+  $('#fileInput').onchange=e=>{if(e.target.files.length)handleFiles(e.target.files);e.target.value=''};
+  document.addEventListener('pointerdown',e=>{if(!e.target.closest('.search-wrap')&&!e.target.closest('#searchPanel'))$('#searchPanel').classList.add('hidden');if(!e.target.closest('#contextMenu'))$('#contextMenu').classList.add('hidden')});
+  document.addEventListener('keydown',e=>{
+    const mod=e.ctrlKey||e.metaKey;
+    if(mod&&e.key.toLowerCase()==='k'){e.preventDefault();$('#globalSearch').focus();searchAll($('#globalSearch').value)}
+    else if(mod&&['1','2','3'].includes(e.key)){e.preventDefault();setView({1:'documents',2:'graph',3:'idea'}[e.key])}
+    else if(e.key==='Escape'){if(!$('#dialogOverlay').classList.contains('hidden'))closeDialog();else if(!$('#settingsOverlay').classList.contains('hidden'))closeSettings();else{$('#searchPanel').classList.add('hidden');$('#globalSearch').blur()}$('#contextMenu').classList.add('hidden')}
   });
-}
-
-// ============ RESIZERS ============
-function initRsz(){
-  const tp=document.getElementById('treePanel'),gp=document.getElementById('graphPanel'),pp=document.getElementById('pdfPanel');
-  const r1=document.getElementById('rz1'),r2=document.getElementById('rz2');
-  function mk(rs,lp,rp,isR){
-    let sx,slw,srw,sgw;
-    rs.addEventListener('mousedown',e=>{
-      rs.classList.add('drag');sx=e.clientX;
-      slw=lp.getBoundingClientRect().width;srw=rp.getBoundingClientRect().width;sgw=gp.getBoundingClientRect().width;
-      document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);e.preventDefault();
-    });
-    function mv(e){
-      const dx=e.clientX-sx;
-      if(!isR){lp.style.width=Math.max(200,slw+dx)+'px';}
-      else{pp.style.width=Math.max(280,srw-dx)+'px';}
-      const w=gp.clientWidth,h=gp.clientHeight;
-      svg.attr('width',w).attr('height',h);sim.force('center',d3.forceCenter(w/2,h/2));sim.alpha(.2).restart();
-    }
-    function up(){rs.classList.remove('drag');document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);}
-  }
-  mk(r1,tp,gp,false);mk(r2,gp,pp,true);
-}
-
-// ============ INIT ============
-document.addEventListener('DOMContentLoaded',()=>{
-  renderPDF();renderTree();renderLegend();initGraph();initRsz();
-  // release doc fixed positions after initial layout
-  setTimeout(()=>{
-    nodes.forEach(n=>{if(n.type==='doc'){n.fx=null;n.fy=null;}sim.alpha(.3).restart();});
-  },2000);
-});
+  let resizeStart=null;$('#splitter').onpointerdown=e=>{resizeStart={x:e.clientX,w:$('#sidebar').getBoundingClientRect().width};e.target.setPointerCapture(e.pointerId)};
+  $('#splitter').onpointermove=e=>{if(!resizeStart)return;const total=$('.main-content').clientWidth,next=Math.max(190,Math.min(total*.45,resizeStart.w+e.clientX-resizeStart.x));$('.main-content').style.gridTemplateColumns=next+'px 3px minmax(0,1fr)';if(state.view==='graph')renderGraph()};
+  $('#splitter').onpointerup=()=>resizeStart=null;window.addEventListener('resize',()=>{if(state.view==='graph')renderGraph()});
+  setView('documents');setTimeout(()=>toast('已载入三篇真实文献与人工校准图谱；体验窗不会调用模型','success'),450);
+  window.__KS_DEMO_READY__=true;
+  if(window.parent!==window)window.parent.postMessage({type:'knowsource-demo-ready'},'*');
+})();
 </script>
 </body>
 </html>
