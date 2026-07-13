@@ -5,14 +5,14 @@ import { parseHandler, getDocuments, deleteDocument, serveDocumentPdf, pausePars
 import { importSampleDoc } from './handlers/sample-doc.js';
 import { reorderDocuments } from './handlers/documents.js';
 import { extractHandler, modelTestHandler } from './handlers/extract.js';
-import { graphBuildHandler, rebuildCrossLinksHandler } from './handlers/graph-build.js';
+import { graphBuildHandler, rebuildCrossLinksHandler, clearGraphHandler } from './handlers/graph-build.js';
 import { graphQueryHandler } from './handlers/graph-query.js';
 import { createNode, updateNode, deleteNode, createEdge, updateEdge, deleteEdge } from './handlers/graph-node.js';
 import { clearAll, getClearToken } from './handlers/clear.js';
 import { matchHandler } from './handlers/match.js';
 import { searchHandler } from './handlers/search.js';
 import { listIdeas, createIdea, updateIdea, deleteIdea, recommendIdeaNodes, linkIdeaToNode, unlinkIdeaFromNode } from './handlers/idea.js';
-import { setLLMProviderHandler, getLLMProviderHandler, setKGProviderHandler, getKGProviderHandler, ollamaStatusHandler } from './handlers/settings.js';
+import { setLLMProviderHandler, getLLMProviderHandler, testLLMProviderHandler, setKGProviderHandler, getKGProviderHandler, ollamaStatusHandler } from './handlers/settings.js';
 import { getPromptsHandler, setPromptHandler, resetPromptHandler, setDisabledHandler, getLLMLogHandler, testPromptHandler, initPromptStore } from './handlers/prompts.js';
 import { listProjectsHandler, createProjectHandler, renameProjectHandler, updateProjectHandler, deleteProjectHandler, switchProjectHandler, exportProjectHandler, importProjectHandler } from './handlers/projects.js';
 import { storage } from '../storage.js';
@@ -89,6 +89,7 @@ function isAllowedDevPort(port) {
 
 // 路由表
 const routes = [
+  { method: 'GET', path: '/health', handler: () => ({ ok: true, service: 'knowsource', time: Date.now() }) },
   { method: 'POST', path: '/parse', handler: parseHandler },
   { method: 'POST', path: '/parse/pause', handler: pauseParse },
   { method: 'POST', path: '/parse/resume', handler: resumeParse },
@@ -100,6 +101,7 @@ const routes = [
   { method: 'POST', path: '/extract', handler: extractHandler },
   { method: 'POST', path: '/extract/model-test', handler: modelTestHandler },
   { method: 'POST', path: '/graph/build', handler: graphBuildHandler },
+  { method: 'POST', path: '/graph/clear', handler: clearGraphHandler },
   { method: 'POST', path: '/graph/crosslinks/rebuild', handler: rebuildCrossLinksHandler },
   { method: 'GET', path: '/graph/query', handler: graphQueryHandler },
   { method: 'POST', path: '/graph/nodes', handler: createNode },
@@ -115,6 +117,7 @@ const routes = [
   { method: 'POST', path: '/search', handler: searchHandler },
   { method: 'POST', path: '/settings/llm', handler: setLLMProviderHandler },
   { method: 'GET', path: '/settings/llm', handler: getLLMProviderHandler },
+  { method: 'POST', path: '/settings/llm/test', handler: testLLMProviderHandler },
   { method: 'POST', path: '/settings/kg', handler: setKGProviderHandler },
   { method: 'GET', path: '/settings/kg', handler: getKGProviderHandler },
   { method: 'POST', path: '/settings/ollama-status', handler: ollamaStatusHandler },
@@ -160,19 +163,6 @@ export async function handleHttpRequest(req, res) {
   const path = url.pathname;
   const method = req.method;
 
-  // 速率限制：防止重操作接口被滥用或导致 DoS
-  // 本地服务优先使用 socket 地址，避免 x-forwarded-for 可伪造
-  const clientIp = req.socket?.remoteAddress?.replace(/^::ffff:/, '') || 'unknown';
-  const rateLimit = checkRateLimit(clientIp, path);
-  if (!rateLimit.allowed) {
-    res.writeHead(429, {
-      'Content-Type': 'application/json',
-      'Retry-After': String(rateLimit.retryAfter)
-    });
-    res.end(JSON.stringify({ error: 'Too many requests, please try again later', retryAfter: rateLimit.retryAfter }));
-    return;
-  }
-
   // CORS：仅允许本地开发服务器（localhost 和 127.0.0.1）的指定端口，
   // 以及 Electron 的 file:// 协议，禁止其他来源（防止本地恶意 HTML 文件访问后端）
   const origin = req.headers.origin;
@@ -183,8 +173,9 @@ export async function handleHttpRequest(req, res) {
       const hostname = originUrl.hostname;
       const port = originUrl.port;
 
-      // 允许 Electron 的 file:// 协议（生产环境渲染进程通过 file:// 加载）
-      if (protocol === 'file:') {
+      // 浏览器会把 file:// 页面的 Origin 序列化为字符串 "null"；
+      // 仅在 Electron 注入了 API Token 时放行，避免普通本地 HTML 访问开发后端。
+      if (origin === 'null' && API_TOKEN) {
         res.setHeader('Access-Control-Allow-Origin', 'null');
       } else if ((hostname === 'localhost' || hostname === '127.0.0.1') && isAllowedDevPort(port)) {
         // 仅允许本地开发服务器白名单端口
@@ -192,11 +183,15 @@ export async function handleHttpRequest(req, res) {
       }
       // 其他来源不设置 CORS 头，浏览器将拒绝跨域请求
     } catch (e) {
-      // 非法 origin，不设置 CORS 头
+      if (origin === 'null' && API_TOKEN) {
+        res.setHeader('Access-Control-Allow-Origin', 'null');
+      }
     }
   }
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Knowledge-IDE-Token');
+  res.setHeader('Access-Control-Max-Age', '600');
   if (method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
@@ -207,6 +202,18 @@ export async function handleHttpRequest(req, res) {
   if (!checkApiToken(req)) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Forbidden: invalid or missing API token' }));
+    return;
+  }
+
+  // 先鉴权、再计数，避免未授权请求耗尽合法用户的本地速率额度。
+  const clientIp = req.socket?.remoteAddress?.replace(/^::ffff:/, '') || 'unknown';
+  const rateLimit = checkRateLimit(clientIp, path);
+  if (!rateLimit.allowed) {
+    res.writeHead(429, {
+      'Content-Type': 'application/json',
+      'Retry-After': String(rateLimit.retryAfter)
+    });
+    res.end(JSON.stringify({ error: '操作过于频繁，请稍后重试', retryAfter: rateLimit.retryAfter }));
     return;
   }
 
@@ -281,13 +288,14 @@ export async function handleHttpRequest(req, res) {
     try {
       const chunks = [];
       let totalSize = 0;
-      // /parse 接口需容纳 base64 膨胀的 PDF，放宽到 200MB；其他接口限制 10MB
-      const MAX_BODY_SIZE = path === '/parse' ? 200 * 1024 * 1024 : 10 * 1024 * 1024;
+      // PDF 解析放宽到 200MB；项目导入可能包含多文档，单独放宽到 250MB。
+      const maxBodySizeMb = path === '/projects/import' ? 250 : (path === '/parse' ? 200 : 10);
+      const MAX_BODY_SIZE = maxBodySizeMb * 1024 * 1024;
       for await (const chunk of req) {
         totalSize += chunk.length;
         if (totalSize > MAX_BODY_SIZE) {
           res.writeHead(413, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Request body too large' }));
+          res.end(JSON.stringify({ error: `请求数据过大，最大允许 ${maxBodySizeMb}MB` }));
           return;
         }
         chunks.push(chunk);
@@ -358,6 +366,7 @@ export function registerIpcHandlers(ipcMain) {
     { channel: 'api:extract', handler: extractHandler },
     { channel: 'api:extract:model-test', handler: modelTestHandler },
     { channel: 'api:graph:build', handler: graphBuildHandler },
+    { channel: 'api:graph:clear', handler: clearGraphHandler },
     { channel: 'api:graph:crosslinks:rebuild', handler: rebuildCrossLinksHandler },
     { channel: 'api:graph:query', handler: graphQueryHandler },
     { channel: 'api:graph:nodes:create', handler: createNode },
@@ -372,6 +381,7 @@ export function registerIpcHandlers(ipcMain) {
     // 设置：KG provider 查询与 Ollama 检测
     // 注意：setLLMProvider/setKGProvider 的 IPC 由 electron/main.js 单独处理
     // （需同步更新 CSP connect-src 白名单），不在此注册以避免绕过 CSP 更新
+    { channel: 'api:settings:llm:test', handler: testLLMProviderHandler },
     { channel: 'api:settings:kg:get', handler: getKGProviderHandler },
     { channel: 'api:settings:ollama-status', handler: ollamaStatusHandler },
     { channel: 'api:ideas:list', handler: listIdeas },

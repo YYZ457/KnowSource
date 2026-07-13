@@ -98,6 +98,47 @@ export async function setLLMProviderHandler(config = {}) {
 }
 
 /**
+ * 使用临时 provider 测试连接，不修改当前全局 LLM 配置。
+ * 网络请求只发生在本地后端，渲染进程不再直连第三方模型服务。
+ */
+export async function testLLMProviderHandler(config = {}) {
+  const cfg = { ...config };
+  if (cfg.provider === 'openai') {
+    cfg.provider = 'openai-compatible';
+    cfg.vendor = cfg.vendor || 'openai';
+  }
+  if (cfg.baseUrl && cfg.baseUrl.includes('localhost:11434')) {
+    cfg.baseUrl = cfg.baseUrl.replace('localhost:11434', '127.0.0.1:11434');
+  }
+
+  const validProviders = ['stub', 'ollama', 'openai-compatible', 'huggingface'];
+  if (cfg.provider && !validProviders.includes(cfg.provider)) {
+    return { success: false, error: `未知的 provider: ${cfg.provider}` };
+  }
+  if (cfg.provider && cfg.provider !== 'stub' && !cfg.model) {
+    return { success: false, error: '模型名称不能为空' };
+  }
+
+  try {
+    const provider = createLLMProvider(cfg.provider || 'stub', {
+      vendor: cfg.vendor,
+      model: cfg.model,
+      apiKey: cfg.apiKey,
+      baseUrl: cfg.baseUrl
+    });
+    const response = await provider.complete('你好，请只回复“连接成功”。', {
+      temperature: 0.1,
+      maxTokens: 64,
+      timeoutMs: 60000,
+      maxRetries: 0
+    });
+    return { success: true, response: String(response ?? '') };
+  } catch (error) {
+    return { success: false, error: `连接失败：${error.message}` };
+  }
+}
+
+/**
  * 返回当前 LLM provider 配置（供前端读取并显示）
  * 注意：apiKey 属于敏感信息，不回传
  */
@@ -120,7 +161,9 @@ export async function setKGProviderHandler(config = {}) {
  */
 export function getKGProviderHandler() {
   const provider = getKGProvider();
-  return provider?.config || { provider: 'stub' };
+  const config = provider?.config || { provider: 'stub' };
+  const { apiKey, ...safeConfig } = config;
+  return safeConfig;
 }
 
 /**

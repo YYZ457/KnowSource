@@ -55,6 +55,8 @@ temp/
 
 # Traineddata (too large for git, downloaded separately)
 *.traineddata
+!chi_sim.traineddata
+!eng.traineddata
 
 # Zip archives
 *.zip

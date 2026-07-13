@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld('KSElectron', {
     apiToken: process.env.KNOWLEDGE_IDE_API_TOKEN || ''
   },
 
+  // ============ 系统安全存储（模型配置 / API Key） ============
+  secureStore: {
+    get: (key) => ipcRenderer.invoke('secure-store:get', key),
+    set: (key, value) => ipcRenderer.invoke('secure-store:set', key, value)
+  },
+
   // ============ 事件监听（主进程 → 渲染进程） ============
   // 每个 onXxx 返回取消订阅函数，调用方可在组件卸载时调用以避免内存泄漏
   onOpenFile: (callback) => {

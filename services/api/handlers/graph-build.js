@@ -494,3 +494,39 @@ export async function rebuildCrossLinksHandler({ options } = {}) {
     storage.building = false;
   }
 }
+
+/**
+ * 仅清空知识图谱数据（保留文档、Idea、uploads）
+ * POST /graph/clear
+ *
+ * 与 /clear（清空全部数据）不同，此端点仅清除图谱的 nodes/edges/stats，
+ * 不会删除文档、灵感或上传的文件，用户可以随时重新构建图谱。
+ */
+export async function clearGraphHandler() {
+  // 构建中禁止清空，避免竞态
+  if (buildInProgress || storage.building) {
+    return { success: false, error: '图谱构建正在进行中，请等待完成' };
+  }
+
+  // 仅清空图谱数据，保留 documents / ideas / uploads
+  const g = storage.graph;
+  g.nodes = [];
+  g.edges = [];
+  g.stats = {};
+
+  // 清理向量库中的图谱相关向量（文档向量可保留，不影响下次构建）
+  try {
+    const { getVectorStore } = await import('../../vector-store.js');
+    const vecStore = getVectorStore();
+    if (vecStore && typeof vecStore.clear === 'function') {
+      await vecStore.clear();
+    }
+  } catch (e) {
+    console.warn('[graph-clear] 清理向量库失败:', e.message);
+  }
+
+  // 重置任务进度
+  storage.taskProgress = { taskId: null, status: 'idle', stage: '', percent: 0, log: '' };
+
+  return { success: true, nodes: [], edges: [], stats: {} };
+}

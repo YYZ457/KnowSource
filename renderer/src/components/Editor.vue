@@ -6,12 +6,26 @@
   <div class="editor">
     <!-- 空状态 -->
     <div v-if="!selectedDoc" class="empty-state editor__empty">
-      <svg viewBox="0 0 24 24" fill="none">
+      <div class="editor__empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
         <path d="M14 2v6h6M9 13h6M9 17h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <p>未选择文档</p>
-      <p class="editor__empty-hint">从左侧文件列表中选择一个文档以查看内容</p>
+        </svg>
+      </div>
+      <span class="editor__empty-eyebrow">快速开始</span>
+      <h2>{{ docsStore.documents.length ? '选择资料，继续阅读' : '从第一份资料开始构建知识库' }}</h2>
+      <p class="editor__empty-hint">
+        {{ docsStore.documents.length ? '从左侧选择文档，或继续导入新的研究材料。' : '导入 PDF、Markdown 或文本，知源会为你整理内容并连接成图谱。' }}
+      </p>
+      <div class="editor__empty-actions">
+        <button v-if="docsStore.documents.length" class="btn btn--primary" type="button" @click="openFirstDocument">打开第一篇</button>
+        <button class="btn btn--primary" type="button" @click="triggerImport">导入本地文档</button>
+        <button class="btn" type="button" :disabled="importingSample" @click="importSample">
+          <span v-if="importingSample" class="spinner" aria-hidden="true"></span>
+          {{ importingSample ? '载入中…' : '体验示例文档' }}
+        </button>
+      </div>
+      <p class="editor__empty-support">支持 PDF、DOCX、Markdown、TXT · 单文件最大 50MB</p>
     </div>
 
     <!-- 文档查看器 -->
@@ -96,13 +110,41 @@
 
 <script setup>
 import { ref, shallowRef, computed, watch, onMounted, nextTick } from 'vue'
-import { useDocsStore } from '../stores'
+import { useDocsStore, useUiStore } from '../stores'
+import { documentsApi } from '../api/client'
 import DOMPurify from 'dompurify'
 
 const docsStore = useDocsStore()
+const uiStore = useUiStore()
 
 const md = shallowRef(null)
 const pdfViewMode = ref('render') // 'render' | 'text'
+const importingSample = ref(false)
+
+function triggerImport() {
+  window.dispatchEvent(new CustomEvent('ks-import-files'))
+}
+
+function openFirstDocument() {
+  const first = docsStore.documents[0]
+  if (first?.id) docsStore.selectDoc(first.id)
+}
+
+async function importSample() {
+  if (importingSample.value) return
+  importingSample.value = true
+  try {
+    const result = await documentsApi.importSample()
+    if (result?.success === false && !result?.skipped) throw new Error(result.error || '示例导入失败')
+    await docsStore.load()
+    if (!docsStore.selectedDocId && docsStore.documents[0]?.id) docsStore.selectDoc(docsStore.documents[0].id)
+    uiStore.toast(result?.skipped ? '示例文档已在资料库中' : '示例文档已准备好', 'success')
+  } catch (e) {
+    uiStore.toast('载入示例失败：' + (e.message || e), 'error')
+  } finally {
+    importingSample.value = false
+  }
+}
 
 // 动态加载 markdown-it,失败则回退纯文本
 onMounted(async () => {
@@ -182,14 +224,38 @@ async function checkPdfAccessible(docId) {
     } else {
       checkUrl = `/api/documents/${encodeURIComponent(docId)}/pdf`
     }
-    const resp = await fetch(checkUrl, { method: 'HEAD', signal: AbortSignal.timeout(5000) })
-    if (resp.ok || resp.status === 206) return true
-    // 403/404 等视为不可用
-    console.warn('[Editor] PDF 预检失败:', resp.status)
-    return false
+    // 使用传统 AbortController 替代 AbortSignal.timeout，兼容性更好
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+    try {
+      const resp = await fetch(checkUrl, { method: 'HEAD', signal: controller.signal })
+      clearTimeout(timeoutId)
+      if (resp.ok || resp.status === 206) return true
+      // 403/404 等视为不可用（静默处理，避免控制台噪音）
+      return false
+    } catch (fetchErr) {
+      clearTimeout(timeoutId)
+      // HEAD 请求可能被浏览器/Vite代理中断（ERR_ABORTED），或不被支持
+      // 任何 HEAD 失败都尝试 GET 请求 range=0-0 作为回退
+      try {
+          const getController = new AbortController()
+          const getTimeoutId = setTimeout(() => getController.abort(), 5000)
+          const getResp = await fetch(checkUrl, {
+            method: 'GET',
+            headers: { 'Range': 'bytes=0-0' },
+            signal: getController.signal
+          })
+          clearTimeout(getTimeoutId)
+          if (getResp.ok || getResp.status === 206 || getResp.status === 200) return true
+          return false
+        } catch (getErr) {
+          // GET 也失败了，但仍允许 iframe 尝试加载（返回 true 让 iframe 自行处理）
+          return true
+        }
+    }
   } catch (e) {
-    console.warn('[Editor] PDF 预检异常:', e.message)
-    return false
+    // 预检完全失败时，仍允许 iframe 尝试加载
+    return true
   }
 }
 
@@ -198,11 +264,17 @@ function retryPdfLoad() {
   pdfRetryKey.value++
 }
 
-// 选中文档变化时预检 PDF
+// 选中文档变化时预检 PDF（使用版本号防止竞态条件）
+let pdfCheckVersion = 0
 watch([() => docsStore.selectedDocId, () => pdfViewMode.value, pdfRetryKey], async ([docId, mode]) => {
-  if (docId && mode === 'render' && isPdf.value) {
+  // 仅当文档存在于文档列表中时才预检，避免过期 docId 产生无效请求
+  const docExists = docId && docsStore.documents.some(d => d.id === docId)
+  if (docExists && mode === 'render' && isPdf.value) {
+    const myVersion = ++pdfCheckVersion
     pdfLoadFailed.value = false
     const ok = await checkPdfAccessible(docId)
+    // 如果在等待期间用户又切换了文档，丢弃过期的检查结果
+    if (myVersion !== pdfCheckVersion) return
     if (!ok) {
       pdfLoadFailed.value = true
     }
@@ -291,19 +363,62 @@ watch(() => docsStore.selectedDocId, (id) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: 40px 28px;
+  text-align: center;
 }
 .editor__empty--inline {
   padding: 32px 20px;
 }
-.editor__empty svg {
+.editor__empty-icon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  transform: rotate(-3deg);
+}
+.editor__empty-icon svg {
   width: 44px;
   height: 44px;
 }
+.editor__empty-eyebrow {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.editor__empty h2 {
+  margin-top: 8px;
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 3vw, 28px);
+  line-height: 1.25;
+  color: var(--text);
+}
 .editor__empty-hint {
-  font-size: 12px;
+  max-width: 520px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-2);
+  margin-top: 10px;
+}
+.editor__empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+.editor__empty-support {
+  margin-top: 14px;
   color: var(--text-3);
-  margin-top: 4px;
-  opacity: 0.7;
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 /* ===== 标题栏 ===== */

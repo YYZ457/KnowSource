@@ -124,8 +124,15 @@ function isSelected(idea) {
   return ideaStore.selectedIdea?.id === idea.id
 }
 
+function cloneIdea(idea) {
+  if (!idea) return null
+  if (typeof structuredClone === 'function') return structuredClone(idea)
+  return JSON.parse(JSON.stringify(idea))
+}
+
 function onSelect(idea) {
-  ideaStore.selectedIdea = idea
+  // 编辑草稿与列表数据隔离，只有保存成功后才同步到列表。
+  ideaStore.selectedIdea = cloneIdea(idea)
 }
 
 function preview(idea) {
@@ -177,7 +184,7 @@ async function onCreate() {
       tags: [],
     })
     if (idea && idea.id) {
-      ideaStore.selectedIdea = idea
+      ideaStore.selectedIdea = cloneIdea(idea)
       uiStore.toast('已新建灵感', 'success')
     } else {
       uiStore.toast('新建灵感失败', 'error')
@@ -190,6 +197,8 @@ async function onCreate() {
 async function onSave() {
   const idea = ideaStore.selectedIdea
   if (!idea) return
+  // 保存前确保标签输入框的内容已同步到 idea.tags（防止用户直接点保存但 blur 未触发）
+  onTagsBlur()
   saving.value = true
   try {
     await ideaStore.update(idea.id, {
@@ -199,7 +208,7 @@ async function onSave() {
     })
     // 保存后 store 中 ideas 数组的元素已被替换为新对象
     // 同步更新 selectedIdea 引用，避免编辑器与列表不同步
-    ideaStore.selectedIdea = ideaStore.ideas.find(i => i.id === idea.id) || ideaStore.selectedIdea
+    ideaStore.selectedIdea = cloneIdea(ideaStore.ideas.find(i => i.id === idea.id) || ideaStore.selectedIdea)
     uiStore.toast('灵感已保存', 'success')
   } catch (e) {
     uiStore.toast('保存失败：' + e.message, 'error')

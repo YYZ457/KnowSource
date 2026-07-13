@@ -7,7 +7,7 @@ export const useUiStore = defineStore('ui', () => {
   const activeView = ref('documents') // documents | graph | idea
   const leftPanelVisible = ref(true)
   const rightPanelVisible = ref(false)
-  const theme = ref(localStorage.getItem('ks-theme') || 'light')
+  const theme = ref(localStorage.getItem('ks-theme') || 'dark')
   const searchQuery = ref('')
   const searchResults = ref([])
   const searchOpen = ref(false)
@@ -42,10 +42,16 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   let toastSeq = 0
+  function dismissToast(id) {
+    toasts.value = toasts.value.filter(t => t.id !== id)
+  }
+
   function toast(message, type = 'info') {
     const id = ++toastSeq
     toasts.value.push({ id, message, type })
-    setTimeout(() => { toasts.value = toasts.value.filter(t => t.id !== id) }, 3000)
+    if (toasts.value.length > 5) toasts.value.splice(0, toasts.value.length - 5)
+    const duration = type === 'error' ? 6500 : type === 'warn' ? 5000 : 3500
+    setTimeout(() => dismissToast(id), duration)
   }
 
   function showConfirm(options) { confirmDialog.value = options }
@@ -55,7 +61,7 @@ export const useUiStore = defineStore('ui', () => {
   const graphCommand = ref(null) // { action: 'zoomIn' | 'zoomOut' | 'reset', ts: number }
   function sendGraphCommand(action) { graphCommand.value = { action, ts: Date.now() } }
 
-  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, setView, openSettings, closeSettings, toggleTheme, toast, showConfirm, closeConfirm, graphCommand, sendGraphCommand }
+  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, setView, openSettings, closeSettings, toggleTheme, toast, dismissToast, showConfirm, closeConfirm, graphCommand, sendGraphCommand }
 })
 
 // ===== Documents Store =====
@@ -97,7 +103,7 @@ export const useDocsStore = defineStore('docs', () => {
     selectedDocId.value = id
     if (!id) { selectedDocContent.value = ''; return }
     const doc = documents.value.find(d => d.id === id)
-    let text = doc?.content || doc?.rawText || ''
+    let text = String(doc?.content || doc?.rawText || '')
     // 清理 PDF 内部标记：[fsXX] 字号标记、[bookmark:LX] 书签标记
     text = text.replace(/^\[fs\d+(?:\.\d+)?\]\s*/gm, '')
     text = text.replace(/^\[bookmark:L\d+\]\s*/gm, '')
@@ -175,10 +181,13 @@ export const useGraphStore = defineStore('graph', () => {
 
     // 修复：轮询后端 /progress 端点获取实时进度
     let pollTimer = null
+    let polling = true // 防止 clearInterval 后回调仍执行导致竞态
     try {
       pollTimer = setInterval(async () => {
+        if (!polling) return // 已停止轮询，丢弃过期回调
         try {
           const p = await graphApi.getProgress()
+          if (!polling) return // async 等待期间已停止
           if (p && p.taskId) {
             if (p.status === 'running') {
               buildProgress.value = p.log || p.stage || '构建中...'
@@ -204,6 +213,7 @@ export const useGraphStore = defineStore('graph', () => {
       setTimeout(() => { if (buildProgress.value.startsWith('构建失败')) buildProgress.value = '' }, 5000)
       throw e
     } finally {
+      polling = false
       if (pollTimer) clearInterval(pollTimer)
       building.value = false
     }
@@ -252,7 +262,7 @@ export const useGraphStore = defineStore('graph', () => {
 
   async function clearGraph() {
     try {
-      await graphApi.clearAll()
+      await graphApi.clearGraph()
     } catch (e) {
       console.error('Clear graph API failed:', e)
       throw e
@@ -317,21 +327,48 @@ export const usePromptStore = defineStore('prompt', () => {
 })
 
 // ===== Model Store =====
+const DEFAULT_MODEL_CONFIG = { provider: 'stub', model: '', apiKey: '', baseUrl: '', vendor: '' }
+const SECURE_MODEL_CONFIG_KEY = 'model-config'
+
 export const useModelStore = defineStore('model', () => {
-  const config = ref({ provider: 'stub', model: '', apiKey: '', baseUrl: '', vendor: '' })
+  const config = ref({ ...DEFAULT_MODEL_CONFIG })
   const testing = ref(false)
   const testResult = ref(null)
 
   async function load() {
     try {
+      const secureStore = typeof window !== 'undefined' ? window.KSElectron?.secureStore : null
+      if (secureStore) {
+        const persisted = await secureStore.get(SECURE_MODEL_CONFIG_KEY)
+        if (persisted && typeof persisted === 'object' && !Array.isArray(persisted) && typeof persisted.provider === 'string') {
+          config.value = { ...DEFAULT_MODEL_CONFIG, ...persisted }
+          // 后端 provider 存在于当前进程内；重启后用加密配置重新初始化。
+          const restored = await settingsApi.saveModelConfig(config.value)
+          if (restored?.success === false) {
+            throw new Error(restored.warnings?.join('；') || '恢复模型配置失败')
+          }
+          return
+        }
+      }
       const data = await settingsApi.getModelConfig()
-      config.value = { ...config.value, ...data }
+      config.value = { ...DEFAULT_MODEL_CONFIG, ...data }
     } catch (e) { console.error('Load model config failed:', e) }
   }
 
   async function save() {
     try {
-      await settingsApi.saveModelConfig(config.value)
+      const snapshot = { ...config.value }
+      const saved = await settingsApi.saveModelConfig(snapshot)
+      if (saved?.success === false) {
+        throw new Error(saved.warnings?.join('；') || '模型配置保存失败')
+      }
+      const secureStore = typeof window !== 'undefined' ? window.KSElectron?.secureStore : null
+      if (secureStore) {
+        const persisted = await secureStore.set(SECURE_MODEL_CONFIG_KEY, snapshot)
+        if (persisted?.success === false) {
+          throw new Error(persisted.error || '模型配置安全存储失败')
+        }
+      }
     } catch (e) { console.error('Save model config failed:', e); throw e }
   }
 

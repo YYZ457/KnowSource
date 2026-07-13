@@ -66,6 +66,13 @@ export function cancelParse() {
 }
 
 export function getDocuments() {
+  // 对已存储的文档应用字体编码修复（一次性，修复后标记 _fontFixed）
+  for (const doc of storage.documents.values()) {
+    if (!doc._fontFixed && doc.rawText) {
+      doc.rawText = fixPdfFontMojibake(doc.rawText);
+      doc._fontFixed = true;
+    }
+  }
   return Array.from(storage.documents.values());
 }
 
@@ -79,6 +86,18 @@ export function getDocuments() {
  * 策略：将字符串中 C1 控制字符和 Latin-1 补充字符（U+0080~U+00FF）按字节重新组合为 UTF-8。
  * 仅在检测到明显的 Mojibake 模式时触发，避免误伤合法的 Latin-1 文本。
  */
+// PDFStringTranslateTable 反向映射表（与 fixBookmarkEncoding 共用）
+// pdfjs-dist 在无 BOM 时使用此表解码 PDF 字符串，0x80-0xA0 范围与标准 Latin-1/Windows-1252 不同
+const PDF_STRING_REVERSE_MAP = {
+  0x2022: 0x80, 0x2020: 0x81, 0x2021: 0x82, 0x2026: 0x83, 0x2014: 0x84,
+  0x2013: 0x85, 0x0192: 0x86, 0x2044: 0x87, 0x2039: 0x88, 0x203A: 0x89,
+  0x2212: 0x8A, 0x2030: 0x8B, 0x201E: 0x8C, 0x201C: 0x8D, 0x201D: 0x8E,
+  0x2018: 0x8F, 0x2019: 0x90, 0x201A: 0x91, 0x2122: 0x92, 0xFB01: 0x93,
+  0xFB02: 0x94, 0x0141: 0x95, 0x0152: 0x96, 0x0160: 0x97, 0x0178: 0x98,
+  0x017D: 0x99, 0x0131: 0x9A, 0x0142: 0x9B, 0x0153: 0x9C, 0x0161: 0x9D,
+  0x017E: 0x9E, 0x20AC: 0xA0
+};
+
 function fixLatin1Mojibake(text) {
   if (!text || typeof text !== 'string') return text;
 
@@ -87,14 +106,27 @@ function fixLatin1Mojibake(text) {
   const highByteCount = (text.match(/[\u0080-\u00FF]/g) || []).length;
   if (highByteCount < 3) return text; // 少量可能是合法的 Latin-1 字符（如 é, ñ）
 
+  // 如果文本已包含大量 CJK 字符，说明编码正确，无需修复
+  const cjkCount = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+  if (cjkCount > highByteCount * 0.5) return text;
+
   try {
-    // 将每个字符转换为字节：C0/C1 控制字符和 Latin-1 补充字符 (U+0080~U+00FF) 取其字节值
     const bytes = new Uint8Array(text.length);
     for (let i = 0; i < text.length; i++) {
       const code = text.charCodeAt(i);
-      bytes[i] = code & 0xFF;
+      if (code < 128) {
+        bytes[i] = code;
+      } else if (code <= 255) {
+        // 0xA1-0xFF 范围：直接取字节值
+        bytes[i] = code;
+      } else if (PDF_STRING_REVERSE_MAP[code] != null) {
+        // 0x80-0xA0 范围：使用反向映射表还原原始字节
+        bytes[i] = PDF_STRING_REVERSE_MAP[code];
+      } else {
+        // 其他多字节字符（如已正确解码的中文/日文/特殊符号），取低字节
+        bytes[i] = code & 0xFF;
+      }
     }
-    // 将字节数组按 UTF-8 解码
     const fixed = Buffer.from(bytes).toString('utf8');
 
     // 验证：修复后的文本应该包含更少的替换字符（U+FFFD）和更少的 C1 控制字符
@@ -107,6 +139,79 @@ function fixLatin1Mojibake(text) {
   } catch {
     return text;
   }
+}
+
+/**
+ * 修复中文 PDF 字体编码问题（非 Latin-1 Mojibake）
+ *
+ * 部分中文 PDF 使用自定义字体编码，将常用标点/空格映射为不相关的汉字：
+ *   - 空格 → "摇" (U+6447)，如 "北京摇 100124" 应为 "北京 100124"
+ *   - 连字符 → "鄄" (U+9144)，如 "31鄄32" 应为 "31-32"
+ *   - 句点 → "郾" (U+90FE)，如 "3郾 2" 应为 "3.2"
+ *   - 乘号 → "伊" (U+4F0A)，如 "n伊 n" 应为 "n×n"
+ *
+ * 策略：通过频率检测判断是否为字体编码问题，然后进行字符替换。
+ * 仅在检测到明显异常时触发，避免误伤合法使用这些汉字的文本。
+ */
+function fixPdfFontMojibake(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  // 检测"摇"字符是否被用作空格（频率检测）
+  // 正常中文文本中"摇"极少出现；如果出现 5 次以上，几乎可以确定是字体编码问题
+  const yaoCount = (text.match(/摇/g) || []).length;
+  const hasFontIssue = yaoCount >= 5;
+
+  if (!hasFontIssue) {
+    // 即使"摇"不频繁，仍检查"鄄"和"郾"是否出现在数字上下文中
+    let result = text;
+    result = result.replace(/(\d)鄄(\d)/g, '$1-$2');
+    result = result.replace(/(\d)郾\s*/g, '$1.');
+    return result;
+  }
+
+  let result = text;
+
+  // 1. 替换"摇"为空格
+  result = result.replace(/摇/g, ' ');
+
+  // 2. 折叠中文字符之间的空格："北 京 工 业" → "北京工业"
+  let prev;
+  let iter = 0;
+  do {
+    prev = result;
+    result = result.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2');
+    iter++;
+  } while (result !== prev && iter < 10);
+
+  // 3. "鄄"在数字/英文之间 → 连字符
+  result = result.replace(/(\d)鄄(\d)/g, '$1-$2');
+  result = result.replace(/([a-zA-Z])鄄([a-zA-Z])/g, '$1-$2');
+
+  // 4. "郾"在数字后 → 句点
+  result = result.replace(/(\d)郾\s*/g, '$1.');
+
+  // 5. "伊"在数字/变量之间 → 乘号
+  result = result.replace(/(\d|[a-zA-Z])伊\s*(\d|[a-zA-Z])/g, '$1×$2');
+
+  // 6. "冶" → 右引号 "（字体编码将右引号映射为"冶"）
+  //    仅在词语后面出现时替换（避免误替换正常的"冶金"等词）
+  result = result.replace(/([a-zA-Z\u4e00-\u9fa5\)\]])冶/g, '$1"');
+
+  // 7. "啄" → δ（数学公式中的 delta）
+  //    "啄"在深度学习论文中几乎不会作为正常汉字出现，可安全替换
+  result = result.replace(/啄/g, 'δ');
+
+  // 8. "忆" → 撇号 ′（数学公式中的导数符号，如 h忆(x) → h′(x)）
+  //    需保护合法词汇"记忆"——先替换为占位符，再替换剩余"忆"，最后恢复
+  result = result.replace(/记忆/g, '\x00MEM\x00');
+  result = result.replace(/忆/g, "'");
+  result = result.replace(/\x00MEM\x00/g, '记忆');
+
+  // 9. 清理多余空格
+  result = result.replace(/  +/g, ' ');
+  result = result.replace(/\n /g, '\n');
+
+  return result;
 }
 
 export function deleteDocument({ id } = {}) {
@@ -234,9 +339,19 @@ export async function parseHandler({ name, content, type } = {}) {
         // 阈值与 core/parser 对齐：平均每页 < 50 字符视为扫描版
         const effectiveText = text.trim();
         const textLenPerPage = totalPages > 0 ? effectiveText.length / totalPages : 0;
-        if (effectiveText.length < 100 || textLenPerPage < 50) {
+        // 检测重复内容模式：某些 PDF 字体编码不兼容时，pdfjs-dist 只能提取页眉/期刊名等
+        // 重复内容，而非正文。此时字符数可能超过阈值，但内容高度重复。
+        // 策略：去掉页码标记后，统计非空唯一行的数量；若唯一行数 < 页数的 1/2，视为提取失败
+        const linesNoMarkers = effectiveText
+          .replace(/^---\s*第\d+页\s*---$/gm, '')
+          .split('\n')
+          .map(l => l.trim())
+          .filter(l => l.length > 0);
+        const uniqueLines = new Set(linesNoMarkers);
+        const isRepetitiveContent = totalPages > 2 && uniqueLines.size < totalPages * 0.5;
+        if (effectiveText.length < 100 || textLenPerPage < 50 || isRepetitiveContent) {
           try {
-            console.warn(`[parse] PDF "${name}" 文字层稀薄（${effectiveText.length} 字符 / ${totalPages} 页），尝试 OCR...`);
+            console.warn(`[parse] PDF "${name}" 文字层稀薄（${effectiveText.length} 字符 / ${totalPages} 页${isRepetitiveContent ? '，检测到重复内容' : ''}），尝试 OCR...`);
             // 进入 OCR 阶段时清空之前的文字层预览，避免旧标记残留
             storage.setTaskProgress({ taskId: pdfTaskId, stage: 'parse-ocr', percent: 15, log: '检测到扫描版/图片 PDF，正在进行 OCR 识别...', totalPages, previewText: '' });
             const fileLike = {
@@ -281,6 +396,8 @@ export async function parseHandler({ name, content, type } = {}) {
       //       被逐字节当作 Latin-1 字符处理，导致多字节字符拆散
       // 修复：检测是否为误码，将误码字节重新组合为正确的 UTF-8 字符
       text = fixLatin1Mojibake(text);
+      // 修复中文 PDF 字体编码问题："摇"→空格, "鄄"→连字符, "郾"→句点
+      text = fixPdfFontMojibake(text);
     } catch (e) {
       if (e.code === 'CANCELLED') {
         throw new Error('PDF 解析已取消');
@@ -296,6 +413,8 @@ export async function parseHandler({ name, content, type } = {}) {
         throw new Error('PDF 提取结果格式错误');
       }
       text = content.text || '';
+      // 修复中文 PDF 字体编码问题
+      text = fixPdfFontMojibake(text);
       originalBase64 = content.rawBase64 || '';
       totalPages = content.totalPages || 0;
       isScanned = !!content.isScanned;
@@ -700,17 +819,7 @@ async function parsePDFPages(buffer, options = {}) {
  */
 function fixBookmarkEncoding(title) {
   if (!title) return '';
-  // 基于 pdfjs-dist PDFStringTranslateTable (pdf.worker.js:4351) 的反向映射
-  // 仅包含 0x80-0xA0 范围的非零映射（中文 UTF-8 字节只会命中此范围）
-  const PDF_STRING_REVERSE_MAP = {
-    0x2022: 0x80, 0x2020: 0x81, 0x2021: 0x82, 0x2026: 0x83, 0x2014: 0x84,
-    0x2013: 0x85, 0x0192: 0x86, 0x2044: 0x87, 0x2039: 0x88, 0x203A: 0x89,
-    0x2212: 0x8A, 0x2030: 0x8B, 0x201E: 0x8C, 0x201C: 0x8D, 0x201D: 0x8E,
-    0x2018: 0x8F, 0x2019: 0x90, 0x201A: 0x91, 0x2122: 0x92, 0xFB01: 0x93,
-    0xFB02: 0x94, 0x0141: 0x95, 0x0152: 0x96, 0x0160: 0x97, 0x0178: 0x98,
-    0x017D: 0x99, 0x0131: 0x9A, 0x0142: 0x9B, 0x0153: 0x9C, 0x0161: 0x9D,
-    0x017E: 0x9E, 0x20AC: 0xA0
-  };
+  // 使用模块级共享的 PDF_STRING_REVERSE_MAP（已在外部定义）
   try {
     // 快速检测：若无 >127 的字符，无需修复
     let needsFix = false;

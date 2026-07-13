@@ -166,6 +166,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { documentsApi } from '../api/client'
 
 const visible = ref(false)
 const currentStep = ref(0)
@@ -476,12 +477,7 @@ async function importSampleDoc() {
   if (sampleImported) return
   sampleImported = true
   try {
-    const res = await fetch('/api/documents/import-sample', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}'
-    })
-    const data = await res.json()
+    const data = await documentsApi.importSample()
     if (data.success && !data.skipped) {
       // 文档导入成功后通知 store 刷新文档列表
       window.__ksDocStore?.load?.()

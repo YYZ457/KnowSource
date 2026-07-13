@@ -99,7 +99,26 @@ const STOP_WORDS = new Set([
   'improve', 'connected', 'fully', 'category', 'wise',
   'randomly', 'capable', 'compute', 'style',
   'series', 'technical', 'representative', 'openai', 'palm',
-  'fine', 'natural', 'word', 'data'
+  'fine', 'natural', 'word', 'data',
+  // 英文学术论文元数据词（非领域概念，来自论文标题/期刊/会议信息）
+  'conference', 'international', 'proceedings', 'journal', 'transactions',
+  'press', 'society', 'institute', 'university', 'college', 'department',
+  'author', 'authors', 'et', 'al', 'vol', 'pp', 'doi', 'isbn', 'issn',
+  'abstract', 'keywords', 'introduction', 'conclusion', 'references',
+  // 英文通用动词/名词（在学术语境中过于宽泛）
+  'pattern', 'patterns', 'scale', 'scales', 'human', 'humans',
+  'processing', 'recognition', 'vision', 'training', 'convolutional',
+  'deep', 'neural', 'networks', 'network', 'machine', 'learning',
+  'application', 'applications', 'performance', 'accuracy', 'method', 'methods',
+  'model', 'models', 'layer', 'layers', 'feature', 'features',
+  'classification', 'detection', 'segmentation', 'generation',
+  'imagenet', 'cifar', 'mnist', 'dataset', 'datasets',
+  'accuracy', 'loss', 'error', 'rate', 'rates',
+  // 英文碎片词/通用词/人名（从实际图谱数据中发现的噪声实体）
+  'speech', 'research', 'hierarchical', 'computer', 'saliency',
+  'salient', 'visual', 'wang', 'attention',
+  'information', 'analysis', 'system', 'systems', 'based', 'using',
+  'proposed', 'method', 'results', 'show', 'table', 'figure',
 ]);
 
 // ============ 1b. 通用过滤常量 ============
@@ -109,9 +128,45 @@ const MATH_VAR_PATTERN = /^(dx|dy|dz|dt|cov|var|std|sd|se|exp|ex|log|ln|lim|sin|
 const HEADING_NUMBER_PATTERN = /^\s*\d+(?:\.\d+)*\s*[\u4e00-\u9fa5]/;
 const FRAGMENT_START_PATTERN = /^[的是在中为和以与或得次量互维\)\]）】]/;
 const FRAGMENT_END_PATTERN = /[的是为与]$/;
+// 扩展碎片词首字检查：仅在短词(≤5字)上生效，避免误伤"等价关系""度量学习"等合法术语
+const FRAGMENT_START_SHORT_PATTERN = /^[等度才京宝层们被把将向由而且但则即若如虽然因故所之其此彼某该第章节页图表例解答题问述各约本个种类项目条件份回遍趟]/;
 // 通用结构性垃圾词模式：断词（以虚词结尾且≤5字）、公式残留、章节编号开头
 // 不再枚举领域特定断词，由结构性模式 + PMI + 子串抑制自动过滤
 const JUNK_WORDS = /^([^\u4e00-\u9fa5a-zA-Z]{0,3}[的是为与以于从到在由向或及等]$|^[a-zA-Z]\s+[\u4e00-\u9fa5]|^[IVXivx]$)/i;
+
+// ============ 1c. 实体质量增强过滤常量（v2 新增） ============
+// 以下常量用于 isGarbageEntity 的增强过滤，解决 PDF 提取产生的碎片化实体问题
+
+// 乱码/编码错误字符：替换符(U+FFFD)、控制字符(除制表/换行外)、
+// PDF.js 逐字节 Latin-1 误读产生的重音拉丁字符密集组合
+const GARBAGE_CHAR = /[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u0080-\u009F]/;
+// 检测连续 2 个及以上重音拉丁字符（PDF 中文被逐字节当 Latin-1 解码的典型乱码特征）
+const MOJIBAKE_PATTERN = /[àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞß]{2,}/;
+
+// 纯数字或数字+符号组合（如 "3.14"、"2024"、"1,000"、"1.0.0"、"3-2"）
+// 这类片段来自公式、年份、页码、编号，不是知识图谱实体
+const PURE_NUMERIC_PATTERN = /^[\d\s.,;:_%\-+\/\*\^\(\)\[\]\{\}~]+$/;
+// 数字占比过高（数字+少量字母/中文，如 "3a"、"x1"、"第3" 之类编号残留）
+// 当实体中数字字符占比超过 60% 且总长 <=5 时视为编号碎片
+function isNumericDominant(word) {
+  const digits = (word.match(/\d/g) || []).length;
+  const alpha = (word.match(/[\u4e00-\u9fa5a-zA-Z]/g) || []).length;
+  const total = digits + alpha;
+  return total > 0 && digits / total > 0.6 && word.length <= 5;
+}
+
+// 有效字符（中日韩统一表意文字 + 英文字母 + 数字）
+const MEANINGFUL_CHARS = /[\u4e00-\u9fa5a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/g;
+// 当有效字符占比过低（<60%）时，判定为 PDF 提取碎片或乱码残留
+const MIN_MEANINGFUL_RATIO = 0.6;
+
+// 重复字符检测：同一字符连续出现 3 次以上（如 "随随随"、"的的的"），通常是解析错误
+function hasExcessiveRepetition(word) {
+  const runs = word.match(/(.)\1{2,}/g);
+  if (!runs) return false;
+  const repeated = runs.reduce((s, r) => s + r.length, 0);
+  return repeated / word.length > 0.4;
+}
 
 // ============ 2. 中文分词（轻量级，无需词典） ============
 // 改进：基于互信息(PMI)的多字词识别 + 学术后缀识别 + 词性启发式过滤
@@ -276,17 +331,31 @@ function computePMI(tokens, originalText) {
   return pmiScores;
 }
 
+// 中文碎片噪声词：PDF分词产生的断裂片段
+const ENTITY_NOISE = new Set([
+  '码器', '解码', '编码', '卷积神经', '深度神', '经网络', '神网络',
+  '深度学习研', '卷积神经网', '注意力机', '注意力机制研',
+  '卷积层', '池化层', '全连接',
+  // 中文碎片噪声词（PDF分词产生的断裂片段）
+  '计算机应', '算机应用', '等人提出', '包含了',
+  // 量词+名词碎片（PDF分词产生的断裂片段）
+  '张图像', '个视频', '幅图像', '个特征', '种方法', '类网络', '个模型',
+]);
+
 // 轻量垃圾实体检测（不依赖 PMI，用于最终过滤阶段）
 // 仅保留通用结构性检测，不包含领域特定词汇过滤
 function isGarbageEntity(word) {
   if (!word || word.length < 2 || word.length > 18) return true;
   if (STOP_WORDS.has(word)) return true; // 命中通用停用词直接过滤
+  if (ENTITY_NOISE.has(word)) return true;
   if (JUNK_WORDS.test(word)) return true;
   if (MATH_SYMBOLS.test(word)) return true;
   if (MATH_VAR_PATTERN.test(word)) return true;
   if (HEADING_NUMBER_PATTERN.test(word)) return true;
   if (FRAGMENT_START_PATTERN.test(word)) return true;
   if (FRAGMENT_END_PATTERN.test(word) && word.length <= 5) return true;
+  // 扩展碎片词检查：短词(≤5字)以常见断词字开头时过滤
+  if (word.length <= 5 && FRAGMENT_START_SHORT_PATTERN.test(word)) return true;
   if (/[+=<>^~]/.test(word)) return true;
   // 过滤包含逗号、顿号等的多词拼接或断裂标签
   if (/[，,、]/.test(word)) return true;
@@ -302,6 +371,37 @@ function isGarbageEntity(word) {
   const ops = (word.match(MATH_OPERATORS) || []).length;
   const textChars = (word.match(/[\u4e00-\u9fa5a-zA-Z0-9]/g) || []).length;
   if (textChars > 0 && ops / (ops + textChars) > 0.25) return true;
+
+  // ===== v2 新增：实体质量增强过滤 =====
+
+  // 1. 乱码字符检测：PDF 提取产生的替换符、控制字符、C1 控制区字符
+  //    这类字符不可能出现在正常学术术语中，直接过滤
+  if (GARBAGE_CHAR.test(word)) return true;
+
+  // 2. Mojibake 检测：PDF.js 将 UTF-8 多字节字符逐字节当 Latin-1 解码，
+  //    会产生连续的重音拉丁字符（如 "ç""è""å"），这是中文乱码的典型特征
+  if (MOJIBAKE_PATTERN.test(word)) return true;
+
+  // 3. 纯数字或数字+符号组合过滤（如 "3.14"、"2024"、"1,000"、"1.0.0"）
+  //    这类片段来自公式常量、年份、页码、章节编号，不是知识图谱实体
+  if (PURE_NUMERIC_PATTERN.test(word)) return true;
+
+  // 4. 数字占主导的短碎片过滤（如 "3a"、"x1"、"第3" 之类编号残留）
+  if (isNumericDominant(word)) return true;
+
+  // 5. 有效字符占比检测：当有效字符（中日韩/英文/数字）占比 < 60% 时，
+  //    判定为 PDF 提取碎片或乱码残留（如 "摇βδ"、"底∫∑" 等混合乱码）
+  const meaningful = (word.match(MEANINGFUL_CHARS) || []).length;
+  if (word.length > 0 && meaningful / word.length < MIN_MEANINGFUL_RATIO) return true;
+
+  // 6. 重复字符检测：同一字符连续出现 3 次以上（如 "随随随"、"的的的"），
+  //    通常是 PDF 解析错误或 OCR 噪声，不是正常术语
+  if (hasExcessiveRepetition(word)) return true;
+
+  // 7. PDF 碎片化文本检测：含非常用符号组合的断裂片段
+  //    过滤含方框、菱形、星号等特殊符号的实体（PDF 装饰符/占位符残留）
+  if (/[□◇◆★☆●○▲△▼▽■◀▶◇※]/.test(word)) return true;
+
   return false;
 }
 
@@ -341,9 +441,23 @@ function isQualityWord(word, pmiScores, freq) {
   // ★ 过滤以"的""是""为""与"结尾的断词
   if (FRAGMENT_END_PATTERN.test(word) && word.length <= 5) return false;
 
+  // ★ 扩展碎片词检查：短词(≤5字)以常见断词字开头时过滤
+  if (word.length <= 5 && FRAGMENT_START_SHORT_PATTERN.test(word)) return false;
+
   // ★ 过滤通用功能动词/教材套话（VERB_FUNCTION_WORDS）
   if (VERB_FUNCTION_WORDS.has(word)) return false;
-  
+
+  // ★ v2 新增：PDF 乱码/碎片化文本早期拦截（与 isGarbageEntity 保持一致）
+  // 虽然 tokenize() 已清理大部分非中英文字符，但种子术语/AI 术语路径可能绕过 tokenize
+  if (GARBAGE_CHAR.test(word)) return false;                 // 控制字符/替换符
+  if (MOJIBAKE_PATTERN.test(word)) return false;             // Latin-1 误读乱码
+  if (PURE_NUMERIC_PATTERN.test(word)) return false; // 纯数字/数字+符号
+  if (isNumericDominant(word)) return false;                  // 数字占主导的短碎片
+  if (hasExcessiveRepetition(word)) return false;             // 重复字符过多
+  // 有效字符占比过低（PDF 碎片残留）
+  const _meaningful = (word.match(MEANINGFUL_CHARS) || []).length;
+  if (word.length > 0 && _meaningful / word.length < MIN_MEANINGFUL_RATIO) return false;
+
   // 学术术语后缀：直接保留（高优先级）
   if (ACADEMIC_SUFFIXES.test(word)) return true;
 
@@ -644,6 +758,11 @@ function extractPhraseLabel(keyword, text) {
     if (JUNK_WORDS.test(phrase)) continue;
     if (FRAGMENT_START_PATTERN.test(phrase)) continue;
     if (PHRASE_JUNK_UNIVERSAL.test(phrase)) continue;
+    // ★ v2 新增：PDF 乱码/碎片化文本提前拦截，避免垃圾短语进入评分
+    if (GARBAGE_CHAR.test(phrase)) continue;
+    if (MOJIBAKE_PATTERN.test(phrase)) continue;
+    if (PURE_NUMERIC_PATTERN.test(phrase)) continue;
+    if (/[□◇◆★☆●○▲△▼▽■◀▶◇※]/.test(phrase)) continue;
 
     // 评分
     let score = 0;
@@ -678,6 +797,14 @@ function extractPhraseLabel(keyword, text) {
   if (/[→←↔⇒⇐⇔\/\\]/.test(bestPhrase)) return keyword;
   if (/^[a-zA-Z]\s+/.test(bestPhrase)) return keyword;
   if (/[IVXivx]/.test(bestPhrase) && /\d/.test(bestPhrase)) return keyword;
+  // ★ v2 新增：与 isGarbageEntity 保持一致的增强质量检查
+  // 防止 PDF 提取的乱码/碎片化文本通过标签提炼进入节点
+  if (GARBAGE_CHAR.test(bestPhrase)) return keyword;                       // 控制字符/替换符
+  if (MOJIBAKE_PATTERN.test(bestPhrase)) return keyword;                   // Latin-1 误读乱码
+  if (PURE_NUMERIC_PATTERN.test(bestPhrase)) return keyword;   // 纯数字/数字+符号
+  if (isNumericDominant(bestPhrase)) return keyword;                        // 数字占主导的短碎片
+  if (hasExcessiveRepetition(bestPhrase)) return keyword;                   // 重复字符过多
+  if (/[□◇◆★☆●○▲△▼▽■◀▶◇※]/.test(bestPhrase)) return keyword;             // PDF 装饰符残留
   // 必须有通用学术后缀才允许替换
   if (!ACADEMIC_SUFFIX_UNIVERSAL.test(bestPhrase)) return keyword;
 
@@ -853,7 +980,7 @@ function findBestHeadingForOffset(items, offset) {
 // 当 useAI=true 且 KSAIKeywords.isAIEnabled() 时，使用AI提取关键词
 // 新增：headings 参数传入层级标题，构建骨架型知识图谱
 async function buildKnowledgeGraph(textbookText, examQuestions = [], options = {}) {
-  const { useAI = false, onProgress = null, seedTerms = null, headings = null, signal = null } = options;
+  const { useAI = false, onProgress = null, seedTerms = null, headings = null, signal = null, docId = null } = options;
   const nodes = [];
   const edges = [];
   const startTime = Date.now();
@@ -1009,6 +1136,60 @@ async function buildKnowledgeGraph(textbookText, examQuestions = [], options = {
       .sort((a, b) => b[1].total - a[1].total)
       .slice(0, MAX_NODES); // ★ 限制最大节点数
 
+    // ★★★ 跨实体碎片抑制（v2 新增）★★★
+    // 解决 n-gram 分词和 AI/种子术语产生的碎片化实体问题：
+    //   "卷积神经" → 被 "卷积神经网络" 抑制
+    //   "深度神"   → 被 "深度神经网络" 抑制
+    //   "经网络"   → 被 "深度神经网络" 抑制
+    // 抑制条件（全部满足才抑制，避免误伤合法独立术语）：
+    //   1. 碎片是某个更长实体的子串/前缀/后缀（prefix/suffix/infix 均覆盖，前缀/后缀匹配要求碎片长度>=3）
+    //   2. 长度差 <= 4（避免 "网络" 被 "卷积神经网络" 过度抑制）
+    //   3. 更长实体得分 >= 碎片得分的 30%（保证更长术语同样重要）
+    //   4. 碎片本身没有学术后缀（如"定律/模型/方法"等，有后缀的通常是合法独立术语）
+    //   5. 碎片不是其他更短实体的超串（避免抑制中间层术语，如"神经网络"若"网络"也存在）
+    //      —— 仅当碎片本身也是某更短实体的超串时，认为它是合法的中间层术语，予以保留
+    {
+      const suppressed = new Set();
+      for (let i = 0; i < validEntities.length; i++) {
+        const [word, s] = validEntities[i];
+        if (suppressed.has(word)) continue;
+        // 条件5预检：如果当前词是其他更短实体的超串，跳过（它是中间层术语）
+        let isIntermediateTerm = false;
+        for (let k = 0; k < validEntities.length; k++) {
+          if (k === i) continue;
+          const otherWord = validEntities[k][0];
+          if (otherWord.length < word.length && word.includes(otherWord) && (word.length - otherWord.length) <= 3) {
+            isIntermediateTerm = true;
+            break;
+          }
+        }
+        if (isIntermediateTerm) continue;
+        // 检查是否是某个更长实体的碎片
+        for (let j = 0; j < validEntities.length; j++) {
+          if (i === j) continue;
+          const [longerWord, longerS] = validEntities[j];
+          if (longerWord.length <= word.length) continue;
+          // 检查是否是更长实体的子串（包括精确子串和前缀/后缀匹配）
+          const isSubstring = longerWord.includes(word);
+          const isPrefixMatch = longerWord.startsWith(word) && word.length >= 3;
+          const isSuffixMatch = longerWord.endsWith(word) && word.length >= 3;
+          if ((isSubstring || isPrefixMatch || isSuffixMatch)
+              && (longerWord.length - word.length) <= 4
+              && longerS.total >= s.total * 0.3
+              && !ACADEMIC_SUFFIXES.test(word)) {
+            suppressed.add(word);
+            break;
+          }
+        }
+      }
+      if (suppressed.size > 0) {
+        // 原地替换 validEntities，移除被抑制的碎片
+        const filtered = validEntities.filter(([w]) => !suppressed.has(w));
+        validEntities.length = 0;
+        validEntities.push(...filtered);
+      }
+    }
+
     // ---------- Step 5b: 标题骨架节点（如果传入了 headings） ----------
     checkAborted();
     const headingNodeMap = new Map(); // headingId -> nodeId
@@ -1032,7 +1213,7 @@ async function buildKnowledgeGraph(textbookText, examQuestions = [], options = {
             page: item.page,
             start: item.start,
             end: item.end,
-            source: { page: item.page || 0, start: item.start || 0, end: item.end || 0, sectionId: item.id },
+            source: { docId, page: item.page || 0, start: item.start || 0, end: item.end || 0, sectionId: item.id },
             weight: 5 - (item.level || 1), // 高层级权重更高
             color: headingColors[headingIndex % headingColors.length],
             size: 18 - (item.level || 1) * 3,
@@ -1151,7 +1332,7 @@ async function buildKnowledgeGraph(textbookText, examQuestions = [], options = {
         df: s.df,
         paragraphs: [...(entityParas.get(entity) || [])],
         pages: entityPages,
-        source: { page: entityPages.length > 0 ? entityPages[0] : 1, start: Math.max(0, entityStart) },
+        source: { docId, page: entityPages.length > 0 ? entityPages[0] : 1, start: Math.max(0, entityStart) },
         size: 0,
         x: 0, y: 0,
         meta: Object.keys(meta).length > 0 ? meta : undefined

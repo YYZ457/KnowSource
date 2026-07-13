@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, shell, safeStorage } = requir
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { fileURLToPath } = require('url');
 
 // 全局异常处理，避免未捕获的 Promise 拒绝和异常导致进程静默崩溃
 process.on('unhandledRejection', (reason, promise) => {
@@ -44,7 +45,11 @@ process.on('llm-config-changed', ({ baseUrl }) => {
 let mainWindow = null;
 let backendServer = null;
 const recentOpenedFiles = new Set();
-const BACKEND_PORT = process.env.PORT || 8000;
+const hasExplicitBackendPort = typeof process.env.PORT === 'string' && process.env.PORT.trim() !== '';
+let backendPort = Number.parseInt(process.env.PORT || '8000', 10);
+if (!Number.isInteger(backendPort) || backendPort < 1 || backendPort > 65535) {
+  backendPort = 8000;
+}
 
 // 单实例锁：防止用户多次打开应用导致端口/数据目录竞态
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -66,9 +71,10 @@ async function startBackendService() {
   // 使用 Electron 的 userData 根目录（已经由 Electron 创建并确保可写）。
 
   // 先检查端口是否已被本应用后端占用（通过 HTTP 健康检查，避免误判其他服务）
-  const isOurs = await isOurBackendRunning();
+  const isOurs = await isOurBackendRunning(backendPort);
   if (isOurs) {
     console.log('[Electron] 检测到本应用后端服务已在运行');
+    process.env.PORT = String(backendPort);
     return;
   }
 
@@ -85,40 +91,70 @@ async function startBackendService() {
     console.warn('[Electron] 加载提示词覆盖失败:', e.message);
   }
 
-  backendServer = http.createServer((req, res) => {
-    // 对 /parse 路径单独设置更长超时（30 分钟），因为 PDF 解析+OCR 可能很耗时
-    if (req.url && req.url.startsWith('/parse')) {
-      req.setTimeout(30 * 60 * 1000); // 30 分钟
+  const createBackendServer = () => {
+    const server = http.createServer((req, res) => {
+      // 对 /parse 路径单独设置更长超时（30 分钟），因为 PDF 解析+OCR 可能很耗时
+      if (req.url && req.url.startsWith('/parse')) {
+        req.setTimeout(30 * 60 * 1000); // 30 分钟
+      }
+      handleHttpRequest(req, res);
+    });
+    // HTTP 服务器超时设置，与 services/server.js 保持一致，避免慢速请求耗尽连接
+    server.timeout = 300000;
+    server.keepAliveTimeout = 5000;
+    server.requestTimeout = 300000;
+    return server;
+  };
+
+  // 显式 PORT 必须严格遵守；默认 8000 被占用时自动寻找可用本地端口。
+  const candidatePorts = hasExplicitBackendPort
+    ? [backendPort]
+    : Array.from({ length: 21 }, (_, index) => 8000 + index);
+  let lastError = null;
+  for (const port of candidatePorts) {
+    const server = createBackendServer();
+    try {
+      await new Promise((resolve, reject) => {
+        const onError = (error) => {
+          server.removeListener('listening', onListening);
+          reject(error);
+        };
+        const onListening = () => {
+          server.removeListener('error', onError);
+          resolve();
+        };
+        server.once('error', onError);
+        server.once('listening', onListening);
+        server.listen(port, '127.0.0.1');
+      });
+      backendServer = server;
+      backendPort = port;
+      // BrowserWindow 创建前更新环境变量，preload 才能拿到实际端口。
+      process.env.PORT = String(port);
+      backendStopped = false;
+      console.log(`[Electron] 后端服务已启动: http://127.0.0.1:${port}`);
+      return;
+    } catch (error) {
+      lastError = error;
+      try { server.close(); } catch {}
+      if (!hasExplicitBackendPort && error.code === 'EADDRINUSE') {
+        console.warn(`[Electron] 端口 ${port} 已被占用，尝试下一个端口`);
+        continue;
+      }
+      throw error;
     }
-    handleHttpRequest(req, res);
-  });
-
-  // HTTP 服务器超时设置，与 services/server.js 保持一致，避免慢速请求耗尽连接
-  backendServer.timeout = 300000;         // 5 分钟：整个请求的最大处理时间
-  backendServer.keepAliveTimeout = 5000;  // 5 秒：keep-alive 空闲超时
-  backendServer.requestTimeout = 300000;  // 5 分钟：请求头接收超时
-
-  return new Promise((resolve, reject) => {
-    backendServer.listen(BACKEND_PORT, '127.0.0.1', () => {
-      console.log(`[Electron] 后端服务已启动: http://127.0.0.1:${BACKEND_PORT}`);
-      backendStopped = false; // 重置标志，允许后续 stopBackendService 正常执行
-      resolve();
-    });
-    backendServer.on('error', (e) => {
-      console.error('[Electron] 后端服务启动失败:', e.message);
-      reject(e);
-    });
-  });
+  }
+  throw lastError || new Error('8000-8020 端口均不可用');
 }
 
 /**
  * 通过 HTTP 请求检测端口上的服务是否为本应用后端。
  * 发送 GET /documents 请求，检查响应是否为 JSON 且包含 documents 字段。
  */
-function isOurBackendRunning() {
+function isOurBackendRunning(port = backendPort) {
   const http = require('http');
   return new Promise((resolve) => {
-    const req = http.get(`http://127.0.0.1:${BACKEND_PORT}/documents`, {
+    const req = http.get(`http://127.0.0.1:${port}/documents`, {
       timeout: 1000,
       headers: LOCAL_API_TOKEN ? { 'X-Knowledge-IDE-Token': LOCAL_API_TOKEN } : {}
     }, (res) => {
@@ -144,28 +180,35 @@ function isOurBackendRunning() {
 // 退出流程标记，防止 stopBackendService 重复调用
 let backendStopped = false
 
-function stopBackendService() {
+async function stopBackendService() {
   if (backendStopped) return
   backendStopped = true
-  if (backendServer) {
-    try { backendServer.close() } catch {}
-    backendServer = null
-  }
-  // 优雅关闭：终止 OCR worker，避免残留子进程占用资源
-  // 使用动态 import 避免在未使用 OCR 功能时加载 tesseract.js
+  // 先把内存中的脏数据严格落盘，再关闭 OCR worker 与 HTTP 服务。
   try {
-    import('../core/parser/index.js').then(({ terminateOcrWorker }) => {
-      terminateOcrWorker().catch(() => {});
-    }).catch(() => {});
+    const storageModule = await import('../services/storage.js')
+    await storageModule.flushAll?.()
+  } catch (error) {
+    console.error('[Electron] 退出前保存数据失败:', error.message)
+  }
+  try {
+    const { terminateOcrWorker } = await import('../core/parser/index.js')
+    await terminateOcrWorker()
   } catch {}
+  if (backendServer) {
+    const server = backendServer
+    backendServer = null
+    await new Promise((resolve) => {
+      try { server.close(resolve) } catch { resolve() }
+    })
+  }
 }
 
 // ============ 创建主窗口 ============
 function buildCsp() {
   // 收紧 connect-src / frame-src：仅允许本应用后端端口，而非 localhost:* / 127.0.0.1:* 通配。
   // 通配符会让渲染层一旦发生 XSS 即可向本机任意端口的本地服务外联数据。
-  const backendOrigin = `http://127.0.0.1:${BACKEND_PORT}`;
-  const localhostOrigin = `http://localhost:${BACKEND_PORT}`;
+  const backendOrigin = `http://127.0.0.1:${backendPort}`;
+  const localhostOrigin = `http://localhost:${backendPort}`;
   const connect = ["'self'", backendOrigin, localhostOrigin, ...allowedConnectOrigins];
   const frame = ["'self'", 'blob:', backendOrigin, localhostOrigin];
   // 修复：开发模式下放宽 CSP 以兼容 Vite HMR
@@ -176,22 +219,56 @@ function buildCsp() {
   return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src " + connect.join(' ') + "; font-src 'self' data:; frame-src " + frame.join(' ') + "; object-src 'none';";
 }
 
+function isAllowedAppNavigation(targetUrl) {
+  try {
+    const parsed = new URL(targetUrl);
+    if (!app.isPackaged) {
+      return parsed.protocol === 'http:' && parsed.hostname === 'localhost' && parsed.port === '5173';
+    }
+    if (parsed.protocol !== 'file:') return false;
+    const distRoot = path.resolve(__dirname, '../dist');
+    const targetPath = path.resolve(fileURLToPath(parsed));
+    const relative = path.relative(distRoot, targetPath);
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  } catch {
+    return false;
+  }
+}
+
+function openExternalHttpUrl(targetUrl) {
+  try {
+    const parsed = new URL(targetUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+    shell.openExternal(parsed.toString()).catch((error) => {
+      console.warn('[Electron] 打开外部链接失败:', error.message);
+    });
+  } catch {
+    // 非法 URL 直接忽略，不交给操作系统处理。
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
+    show: false,
     width: 1400,
     height: 920,
     minWidth: 1000,
     minHeight: 700,
     title: '知源 — 知识图谱构建器',
-    backgroundColor: '#0d0d0d',
+    backgroundColor: '#0a0e1a',
     icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      webviewTag: true
+      webviewTag: false
     }
+  });
+
+  // 等首帧完整绘制后再显示，避免启动阶段的黑闪和半绘制界面。
+  mainWindow.once('ready-to-show', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
   });
 
   // CSP：通过响应头直接设置，比 dom-ready 注入 meta 更可靠，确保覆盖 file:// 协议加载的页面。
@@ -224,14 +301,13 @@ function createWindow() {
 
   // 限制窗口导航、弹窗与权限请求，防止渲染层被控后跳转或请求敏感权限
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const allowed = url.startsWith('file://') || url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
-    if (!allowed) {
+    if (!isAllowedAppNavigation(url)) {
       event.preventDefault();
-      shell.openExternal(url);
+      openExternalHttpUrl(url);
     }
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalHttpUrl(url);
     return { action: 'deny' };
   });
   mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -280,7 +356,9 @@ const appMenu = Menu.buildFromTemplate([
           ]
         });
         if (!result.canceled && result.filePaths[0]) {
-          mainWindow?.webContents.send('open-file', result.filePaths[0]);
+          const selectedPath = path.resolve(result.filePaths[0]);
+          recentOpenedFiles.add(selectedPath);
+          mainWindow?.webContents.send('open-file', selectedPath);
         }
       }},
       { type: 'separator' },
@@ -466,24 +544,25 @@ async function setupIPC() {
       if (!isSafeStoreKey(key)) {
         return { success: false, error: 'Invalid store key' };
       }
+      if (!safeStorage.isEncryptionAvailable()) {
+        return { success: false, error: '系统安全存储不可用，模型配置未保存' };
+      }
       let store = {};
       if (fs.existsSync(secureStoreFile)) {
         const encrypted = await fs.promises.readFile(secureStoreFile);
-        if (safeStorage.isEncryptionAvailable()) {
+        try {
           const decrypted = safeStorage.decryptString(encrypted);
           store = JSON.parse(decrypted);
+        } catch {
+          // 旧版明文或损坏内容不得继续读取；下一次保存直接覆盖为加密数据。
+          console.warn('[Electron] 安全存储内容无法解密，将以新的加密配置覆盖');
+          store = {};
         }
       }
       store[key] = value;
       const json = JSON.stringify(store);
-      if (safeStorage.isEncryptionAvailable()) {
-        const encrypted = safeStorage.encryptString(json);
-        await fs.promises.writeFile(secureStoreFile, encrypted, { mode: 0o600 });
-      } else {
-        // safeStorage 不可用时回退到明文，但限制文件权限为仅所有者可读写
-        console.warn('[Electron] safeStorage 不可用，API Key 将以明文存储（建议检查系统加密支持）');
-        await fs.promises.writeFile(secureStoreFile, json, { mode: 0o600 });
-      }
+      const encrypted = safeStorage.encryptString(json);
+      await fs.promises.writeFile(secureStoreFile, encrypted, { mode: 0o600 });
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };
@@ -493,15 +572,11 @@ async function setupIPC() {
   ipcMain.handle('secure-store:get', async (event, key) => {
     try {
       if (!isSafeStoreKey(key)) return null;
+      if (!safeStorage.isEncryptionAvailable()) return null;
       if (!fs.existsSync(secureStoreFile)) return null;
       const encrypted = await fs.promises.readFile(secureStoreFile);
-      let store = {};
-      if (safeStorage.isEncryptionAvailable()) {
-        const decrypted = safeStorage.decryptString(encrypted);
-        store = JSON.parse(decrypted);
-      } else {
-        store = JSON.parse(encrypted.toString('utf-8'));
-      }
+      const decrypted = safeStorage.decryptString(encrypted);
+      const store = JSON.parse(decrypted);
       return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null;
     } catch (e) {
       return null;
@@ -755,7 +830,7 @@ app.whenReady().then(async () => {
       type: 'error',
       title: '后端服务启动失败',
       message: `知源后端服务启动失败：${e.message}`,
-      detail: `可能原因：\n• 端口 ${BACKEND_PORT} 被其他程序占用\n• 系统权限不足\n\n是否仍要打开应用？（部分功能将不可用）`,
+      detail: `可能原因：\n• 端口 ${backendPort} 被其他程序占用\n• 系统权限不足\n\n是否仍要打开应用？（部分功能将不可用）`,
       buttons: ['仍要打开', '退出'],
       defaultId: 0,
       cancelId: 1
@@ -769,7 +844,7 @@ app.whenReady().then(async () => {
   // 后端启动失败时，通知渲染进程显示错误提示
   if (!backendOk && mainWindow) {
     mainWindow.webContents.once('did-finish-load', () => {
-      mainWindow.webContents.send('backend-error', { port: BACKEND_PORT });
+      mainWindow.webContents.send('backend-error', { port: backendPort });
     });
   }
 
@@ -796,9 +871,15 @@ app.on('window-all-closed', () => {
 app.on('will-quit', async (event) => {
   if (backendStopped) return // 已清理过
   event.preventDefault()
-  stopBackendService()
-  // 给 OCR worker 一点时间完成清理
-  setTimeout(() => {
+  let cleanupTimer
+  const cleanupTimeout = new Promise((resolve) => {
+    cleanupTimer = setTimeout(() => {
+      console.warn('[Electron] 退出清理超过 5 秒，强制结束')
+      resolve()
+    }, 5000)
+  })
+  Promise.race([stopBackendService(), cleanupTimeout]).finally(() => {
+    clearTimeout(cleanupTimer)
     app.exit(0)
-  }, 500)
+  })
 });

@@ -12,16 +12,16 @@
       </div>
 
       <!-- Primary Navigation: 3 workflow views -->
-      <nav class="topbar__nav">
-        <button class="nav-btn" :class="{ 'nav-btn--active': uiStore.activeView === 'documents' }" @click="uiStore.setView('documents')">
+      <nav class="topbar__nav" aria-label="主要视图">
+        <button class="nav-btn" :class="{ 'nav-btn--active': uiStore.activeView === 'documents' }" :aria-current="uiStore.activeView === 'documents' ? 'page' : undefined" aria-label="文献视图，快捷键 Ctrl+1" @click="uiStore.setView('documents')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
           文献
         </button>
-        <button class="nav-btn" :class="{ 'nav-btn--active': uiStore.activeView === 'graph' }" @click="uiStore.setView('graph')">
+        <button class="nav-btn" :class="{ 'nav-btn--active': uiStore.activeView === 'graph' }" :aria-current="uiStore.activeView === 'graph' ? 'page' : undefined" aria-label="知识图谱视图，快捷键 Ctrl+2" @click="uiStore.setView('graph')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11l-5 6M12 11l5 6"/></svg>
           图谱
         </button>
-        <button class="nav-btn" :class="{ 'nav-btn--active': uiStore.activeView === 'idea' }" @click="uiStore.setView('idea')">
+        <button class="nav-btn" :class="{ 'nav-btn--active': uiStore.activeView === 'idea' }" :aria-current="uiStore.activeView === 'idea' ? 'page' : undefined" aria-label="灵感视图，快捷键 Ctrl+3" @click="uiStore.setView('idea')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2z"/></svg>
           灵感
         </button>
@@ -29,29 +29,62 @@
 
       <!-- Search + Settings + Theme -->
       <div class="topbar__actions">
-        <div class="topbar__search-wrap">
+        <div class="topbar__search-wrap" role="search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input class="topbar__search" v-model="uiStore.searchQuery" placeholder="搜索知识..." @focus="uiStore.searchOpen = true" @blur="delayCloseSearch" @keyup.enter="doSearch">
+          <input
+            ref="searchInput"
+            id="global-search"
+            class="topbar__search"
+            v-model="uiStore.searchQuery"
+            type="search"
+            placeholder="搜索知识...  Ctrl+K"
+            aria-label="搜索知识，快捷键 Ctrl+K"
+            aria-controls="global-search-results"
+            :aria-expanded="uiStore.searchOpen"
+            @focus="uiStore.searchOpen = true"
+            @blur="delayCloseSearch"
+            @keyup.enter="doSearch"
+          >
         </div>
-        <SearchPanel v-if="uiStore.searchOpen" @close="uiStore.searchOpen = false" />
-        <button class="icon-btn" @click="uiStore.openSettings('model')" title="设置">
+        <div id="global-search-results">
+          <SearchPanel v-if="uiStore.searchOpen" @close="uiStore.searchOpen = false" />
+        </div>
+        <button class="icon-btn" @click="uiStore.openSettings('model')" title="设置" aria-label="打开设置">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"/>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </button>
-        <button class="icon-btn" @click="uiStore.toggleTheme" :title="uiStore.theme === 'dark' ? '切换亮色' : '切换暗色'">
+        <button class="icon-btn" @click="uiStore.toggleTheme" :title="uiStore.theme === 'dark' ? '切换亮色' : '切换暗色'" :aria-label="uiStore.theme === 'dark' ? '切换到亮色主题' : '切换到暗色主题'" :aria-pressed="uiStore.theme === 'dark'">
           <svg v-if="uiStore.theme === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
         </button>
       </div>
     </header>
 
+    <div
+      v-if="healthState !== 'online'"
+      class="service-status"
+      :class="healthState === 'offline' ? 'service-status--error' : 'service-status--warn'"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="service-status__dot" aria-hidden="true"></span>
+      <div class="service-status__copy">
+        <strong>{{ healthState === 'checking' ? '正在连接本地服务' : '本地服务已断开' }}</strong>
+        <span>{{ healthState === 'checking' ? '知源正在准备你的工作区…' : (healthMessage || '暂时无法读取或保存数据，请重试连接。') }}</span>
+      </div>
+      <button v-if="healthState === 'offline'" class="btn btn--sm" :disabled="healthRetrying" @click="retryConnection">
+        <span v-if="healthRetrying" class="spinner" aria-hidden="true"></span>
+        {{ healthRetrying ? '连接中…' : '重新连接' }}
+      </button>
+    </div>
+
     <!-- ===== Main Content — 统一两栏布局 ===== -->
     <main class="main-content">
       <Splitpanes class="default-theme" @resize="onResize">
         <!-- Left Pane: 上下文侧边栏（随视图切换内容） -->
-        <Pane :size="leftPaneSize" :min-size="15" :max-size="45">
+        <Pane :size="leftPaneSize" :min-size="leftPaneSize === 0 ? 0 : 15" :max-size="45">
           <div class="pane-content">
             <FileExplorer v-if="uiStore.activeView === 'documents'" />
             <GraphNodeTree v-else-if="uiStore.activeView === 'graph'" />
@@ -77,17 +110,20 @@
     <OnboardingTour ref="onboardingRef" />
 
     <!-- ===== Global: Toasts ===== -->
-    <div class="toast-container">
-      <div v-for="t in uiStore.toasts" :key="t.id" class="toast" :class="`toast--${t.type}`">{{ t.message }}</div>
+    <div class="toast-container" aria-live="polite" aria-atomic="false">
+      <div v-for="t in uiStore.toasts" :key="t.id" class="toast" :class="`toast--${t.type}`" :role="t.type === 'error' ? 'alert' : 'status'">
+        <span>{{ t.message }}</span>
+        <button class="toast__close" type="button" :aria-label="`关闭通知：${t.message}`" @click="uiStore.dismissToast(t.id)">×</button>
+      </div>
     </div>
 
     <!-- ===== Global: Confirm Dialog ===== -->
-    <div v-if="uiStore.confirmDialog" class="dialog-overlay" @click.self="uiStore.closeConfirm()">
-      <div class="dialog">
-        <h3>{{ uiStore.confirmDialog.title }}</h3>
-        <p>{{ uiStore.confirmDialog.message }}</p>
+    <div v-if="uiStore.confirmDialog" class="dialog-overlay" role="presentation" @click.self="uiStore.closeConfirm()">
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-message">
+        <h3 id="confirm-dialog-title">{{ uiStore.confirmDialog.title }}</h3>
+        <p id="confirm-dialog-message">{{ uiStore.confirmDialog.message }}</p>
         <div class="dialog__actions">
-          <button class="btn" @click="uiStore.closeConfirm()">{{ uiStore.confirmDialog.cancelText || '取消' }}</button>
+          <button ref="confirmCancelButton" class="btn" @click="uiStore.closeConfirm()">{{ uiStore.confirmDialog.cancelText || '取消' }}</button>
           <button class="btn btn--primary" v-if="uiStore.confirmDialog.confirmText" @click="handleConfirm">{{ uiStore.confirmDialog.confirmText }}</button>
         </div>
       </div>
@@ -100,7 +136,7 @@ import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
 import { useUiStore, useDocsStore, useGraphStore, usePromptStore, useModelStore, useIdeaStore, useProjectStore } from './stores'
-import { searchApi } from './api/client'
+import { searchApi, systemApi, graphApi } from './api/client'
 import FileExplorer from './components/FileExplorer.vue'
 import Editor from './components/Editor.vue'
 import GraphView from './components/GraphView.vue'
@@ -124,6 +160,12 @@ const ideaStore = useIdeaStore()
 const projectStore = useProjectStore()
 
 const leftPaneSize = ref(28)
+const searchInput = ref(null)
+const confirmCancelButton = ref(null)
+const healthState = ref('checking')
+const healthMessage = ref('')
+const healthRetrying = ref(false)
+let healthTimer = null
 
 function onResize(event) {
   if (event[0]) leftPaneSize.value = event[0].size
@@ -145,6 +187,50 @@ async function doSearch() {
     uiStore.toast('搜索失败: ' + e.message, 'error')
   } finally {
     uiStore.searching = false
+  }
+}
+
+async function loadWorkspaceData() {
+  const results = await Promise.allSettled([
+    docsStore.load(),
+    projectStore.load(),
+    promptStore.load(),
+    modelStore.load(),
+    ideaStore.load(),
+    graphStore.loadGraph(),
+  ])
+  const failed = results.filter(result => result.status === 'rejected')
+  if (failed.length) {
+    console.error('Workspace load failures:', failed.map(result => result.reason))
+    uiStore.toast(`有 ${failed.length} 项工作区数据暂未加载，可稍后重试`, 'warn')
+  }
+  return failed.length === 0
+}
+
+async function checkBackendHealth({ showChecking = false, reload = false } = {}) {
+  const previousState = healthState.value
+  if (showChecking) healthState.value = 'checking'
+  try {
+    await systemApi.health()
+    healthState.value = 'online'
+    healthMessage.value = ''
+    if (reload) await loadWorkspaceData()
+    if (previousState === 'offline') uiStore.toast('本地服务已恢复连接', 'success')
+    return true
+  } catch (e) {
+    healthState.value = 'offline'
+    healthMessage.value = e?.message || '本地服务暂时不可用'
+    return false
+  }
+}
+
+async function retryConnection() {
+  if (healthRetrying.value) return
+  healthRetrying.value = true
+  try {
+    await checkBackendHealth({ showChecking: true, reload: true })
+  } finally {
+    healthRetrying.value = false
   }
 }
 
@@ -263,8 +349,17 @@ function setupMenuListeners() {
         confirmText: '清除',
         onConfirm: async () => {
           try {
-            await graphStore.clearGraph()
-            uiStore.toast('已清除所有图谱数据', 'success')
+            await graphApi.clearAll()
+            docsStore.selectDoc(null)
+            ideaStore.selectedIdea = null
+            graphStore.selectedNode = null
+            await Promise.all([
+              docsStore.load(),
+              graphStore.loadGraph(),
+              ideaStore.load(),
+              projectStore.load(),
+            ])
+            uiStore.toast('已清除全部文档、图谱和灵感数据', 'success')
           } catch (e) { uiStore.toast('清除失败: ' + e.message, 'error') }
         }
       })
@@ -304,6 +399,8 @@ function setupMenuListeners() {
   // 后端错误
   if (ks.onBackendError) {
     unsubscribers.push(ks.onBackendError((data) => {
+      healthState.value = 'offline'
+      healthMessage.value = data?.message || '本地服务发生异常'
       uiStore.toast('后端服务异常: ' + (data?.message || '未知错误'), 'error')
     }))
   }
@@ -315,42 +412,42 @@ onMounted(async () => {
 
   // 注册菜单事件
   setupMenuListeners()
-
-  // 并行加载数据
-  const loads = [
-    docsStore.load().catch((e) => { console.error('docs load:', e); return [] }),
-    projectStore.load().catch((e) => { console.error('projects load:', e); return [] }),
-    promptStore.load().catch((e) => { console.error('prompts load:', e); return [] }),
-    modelStore.load().catch((e) => { console.error('model config load:', e); return null }),
-    ideaStore.load().catch((e) => { console.error('ideas load:', e); return [] }),
-    graphStore.loadGraph().catch((e) => { console.error('graph load:', e); return null }),
-  ]
-  const results = await Promise.allSettled(loads)
-  // 如果所有加载都失败，提示后端连接问题
-  const allFailed = results.every(r => r.status === 'rejected')
-  if (allFailed) {
-    uiStore.toast('无法连接后端服务，请检查服务是否已启动', 'error')
-  }
+  window.addEventListener('keydown', onGlobalKeyDown)
+  await retryConnection()
+  healthTimer = window.setInterval(() => checkBackendHealth(), 15000)
 })
 
-// 确认对话框 Escape 键关闭
-function onConfirmKeyDown(e) {
-  if (e.key === 'Escape' && uiStore.confirmDialog) {
-    uiStore.closeConfirm()
+function onGlobalKeyDown(e) {
+  const modifier = e.ctrlKey || e.metaKey
+  if (modifier && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    clearTimeout(searchCloseTimer)
+    uiStore.searchOpen = true
+    nextTick(() => searchInput.value?.focus())
+    return
+  }
+  if (modifier && ['1', '2', '3'].includes(e.key)) {
+    e.preventDefault()
+    const views = { 1: 'documents', 2: 'graph', 3: 'idea' }
+    uiStore.setView(views[e.key])
+    return
+  }
+  if (e.key === 'Escape') {
+    if (uiStore.confirmDialog) uiStore.closeConfirm()
+    else if (uiStore.searchOpen) {
+      uiStore.searchOpen = false
+      searchInput.value?.blur()
+    } else if (uiStore.settingsOpen) uiStore.closeSettings()
   }
 }
-
-onMounted(() => {
-  window.addEventListener('keydown', onConfirmKeyDown)
-})
 
 onBeforeUnmount(() => {
   // 清理所有 IPC 监听器
   unsubscribers.forEach(fn => { try { fn() } catch (e) {} })
   // 清理搜索关闭定时器
   if (searchCloseTimer) clearTimeout(searchCloseTimer)
-  // 清理确认对话框按键监听
-  window.removeEventListener('keydown', onConfirmKeyDown)
+  if (healthTimer) window.clearInterval(healthTimer)
+  window.removeEventListener('keydown', onGlobalKeyDown)
 })
 
 // 视图切换时微调左侧面板宽度
@@ -358,6 +455,10 @@ watch(() => uiStore.activeView, (view) => {
   if (view === 'graph') leftPaneSize.value = 25
   else if (view === 'idea') leftPaneSize.value = 30
   else leftPaneSize.value = 28
+})
+
+watch(() => uiStore.confirmDialog, (dialog) => {
+  if (dialog) nextTick(() => confirmCancelButton.value?.focus())
 })
 </script>
 

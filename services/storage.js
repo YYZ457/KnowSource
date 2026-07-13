@@ -4,7 +4,7 @@
  *  每个项目的数据存储在 DATA_DIR/<projectId>/ 子目录下
  *  任务进度仍保留在内存中（重启后自然清空）
  */
-import { existsSync, mkdirSync, statSync, writeFileSync, readFileSync, rmSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync, readFileSync, rmSync, renameSync, copyFileSync } from 'node:fs';
 import { readFile, writeFile, rm, rename } from 'node:fs/promises';
 import { dirname, join, sep, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -135,7 +135,29 @@ function ensureDataDir() {
 }
 
 async function loadJSON(filePath) {
-  if (NO_PERSIST || !existsSync(filePath)) return null;
+  if (NO_PERSIST) return null;
+  // 主文件不存在时，尝试从备份恢复（rotateBackupSync 曾使用 rename 导致主文件被移走）
+  if (!existsSync(filePath)) {
+    const backups = ['.backup.1', '.backup.2', '.backup.3', '.bak'];
+    for (const suffix of backups) {
+      const backupPath = `${filePath}${suffix}`;
+      if (existsSync(backupPath)) {
+        try {
+          const backupRaw = await readFile(backupPath, 'utf-8');
+          if (backupRaw && backupRaw.trim()) {
+            const recovered = JSON.parse(backupRaw);
+            console.warn(`[storage] 主文件不存在，从备份恢复: ${backupPath}`);
+            // 恢复后立即写回主文件
+            await saveJSON(filePath, recovered);
+            return recovered;
+          }
+        } catch (backupErr) {
+          console.warn(`[storage] 备份损坏 ${backupPath}:`, backupErr.message);
+        }
+      }
+    }
+    return null;
+  }
   let raw;
   try {
     raw = await readFile(filePath, 'utf-8');
@@ -188,9 +210,9 @@ function rotateBackupSync(filePath) {
         renameSync(oldPath, newPath);
       }
     }
-    // 当前文件备份为 .backup.1
+    // 当前文件复制为 .backup.1（复制而非移动，保留主文件）
     if (existsSync(filePath)) {
-      renameSync(filePath, `${filePath}.backup.1`);
+      copyFileSync(filePath, `${filePath}.backup.1`);
     }
   } catch (e) {
     console.warn(`[storage] 备份轮转失败 ${filePath}:`, e.message);
@@ -443,6 +465,49 @@ async function flushGraphSave() {
     await runGraphSave(projectId, graphTarget);
   } catch (e) {
     console.error(`[storage] flush graph 失败:`, e.message);
+  }
+}
+
+/**
+ * 严格刷新所有待持久化数据。退出应用等必须确认落盘的场景应调用此函数。
+ * 既有内部 flush 保持“记录错误后继续”的兼容行为；此严格入口则会等待
+ * 全部写入结束，并将任何失败聚合抛出。
+ * @returns {Promise<void>}
+ * @throws {AggregateError} 一项或多项数据写入失败
+ */
+export async function flushAll() {
+  if (documentsSaveTimer) {
+    clearTimeout(documentsSaveTimer);
+    documentsSaveTimer = null;
+  }
+  if (ideasSaveTimer) {
+    clearTimeout(ideasSaveTimer);
+    ideasSaveTimer = null;
+  }
+  if (graphSaveTimer) {
+    clearTimeout(graphSaveTimer);
+    graphSaveTimer = null;
+  }
+  if (NO_PERSIST) return;
+
+  const projectId = currentProjectId;
+  if (!projectId) return;
+  const operations = [
+    ['documents', runDocumentsSave(projectId)],
+    ['ideas', runIdeasSave(projectId)],
+    ['graph', graphTarget ? runGraphSave(projectId, graphTarget) : Promise.resolve()]
+  ];
+  const results = await Promise.allSettled(operations.map(([, promise]) => promise));
+  const errors = results.flatMap((result, index) => {
+    if (result.status === 'fulfilled') return [];
+    const [name] = operations[index];
+    return [new Error(`${name}: ${result.reason?.message || String(result.reason)}`, {
+      cause: result.reason
+    })];
+  });
+
+  if (errors.length > 0) {
+    throw new AggregateError(errors, `[storage] ${errors.length} 项数据刷新失败`);
   }
 }
 

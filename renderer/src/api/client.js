@@ -57,7 +57,14 @@ async function request(path, options = {}) {
     if (fetchErr.name === 'AbortError') {
       throw new Error(`请求超时（${timeoutMs / 1000}s）：${options.method || 'GET'} ${path}`)
     }
-    throw fetchErr
+    const error = new Error(
+      isElectron
+        ? '本地服务暂时不可用，请稍后重试或重新启动知源'
+        : '无法连接服务，请检查网络和后端是否已启动'
+    )
+    error.cause = fetchErr
+    error.code = 'SERVICE_UNAVAILABLE'
+    throw error
   }
   clearTimeout(timer)
 
@@ -80,7 +87,14 @@ async function request(path, options = {}) {
 
   const ct = resp.headers.get('content-type') || ''
   if (ct.includes('application/json')) {
-    return resp.json()
+    // 防止空 body 导致 JSON.parse 抛出 SyntaxError: Unexpected end of input
+    const text = await resp.text()
+    if (!text || !text.trim()) return {}
+    try {
+      return JSON.parse(text)
+    } catch {
+      return {}
+    }
   }
   return resp.text()
 }
@@ -88,8 +102,14 @@ async function request(path, options = {}) {
 // ===== 文档 API =====
 export const documentsApi = {
   list: () => request('/documents'),
+  importSample: () => request('/documents/import-sample', { method: 'POST', body: {} }),
   remove: (id) => request('/documents/delete', { method: 'POST', body: { id } }),
   reorder: (docIds) => request('/documents/reorder', { method: 'POST', body: { docIds } }),
+}
+
+// ===== 系统状态 API =====
+export const systemApi = {
+  health: () => request('/health', { timeout: 4000 }),
 }
 
 // ===== 解析 API =====
@@ -104,6 +124,7 @@ export const parseApi = {
 // ===== 图谱 API =====
 export const graphApi = {
   build: (docIds, options = {}) => request('/graph/build', { method: 'POST', body: { docIds, options }, timeout: 600000 }),
+  clearGraph: () => request('/graph/clear', { method: 'POST' }),
   getProgress: () => request('/progress', { timeout: 5000 }),
   getStats: () => request('/graph/query', { params: { action: 'stats' } }),
   getNeighbors: (nodeId, depth = 1) => request('/graph/query', { params: { action: 'neighbors', nodeId, depth } }),
@@ -133,6 +154,7 @@ export const settingsApi = {
   // LLM Provider
   getModelConfig: () => request('/settings/llm'),
   saveModelConfig: (config) => request('/settings/llm', { method: 'POST', body: config }),
+  testModelConfig: (config) => request('/settings/llm/test', { method: 'POST', body: config, timeout: 70000 }),
   // KG Provider
   getKGConfig: () => request('/settings/kg'),
   saveKGConfig: (config) => request('/settings/kg', { method: 'POST', body: config }),
@@ -176,50 +198,9 @@ export const logsApi = {
   list: (limit = 50) => request('/settings/llm-log', { params: { limit } }),
 }
 
-// ===== LLM 连接测试（客户端直接调用 LLM API） =====
+// ===== LLM 连接测试（由本地后端代发，API Key 不暴露给第三方页面上下文） =====
 export async function testLLMConnection(config) {
-  const { provider, model, apiKey, baseUrl } = config
-  if (!provider || provider === 'stub') {
-    return { success: true, response: '[Stub 模式] 无需测试连接，将使用离线模拟响应。' }
-  }
-  if (!baseUrl) throw new Error('缺少 API Base URL')
-  // 校验 URL 格式，确保包含协议
-  if (!/^https?:\/\//i.test(baseUrl)) {
-    throw new Error('Base URL 需以 http:// 或 https:// 开头')
-  }
-  const url = String(baseUrl).replace(/\/+$/, '') + '/chat/completions'
-  const headers = { 'Content-Type': 'application/json' }
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-  // 设置 60 秒超时，防止 LLM 服务响应过慢导致 UI 永久卡死
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 60000)
-  let resp
-  try {
-    resp = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: '你好，请回复"连接成功"' }],
-        temperature: 0.1,
-        stream: false,
-      }),
-      signal: controller.signal
-    })
-  } catch (fetchErr) {
-    clearTimeout(timer)
-    if (fetchErr.name === 'AbortError') {
-      throw new Error('LLM 连接测试超时（60s），请检查网络或服务是否可用')
-    }
-    throw fetchErr
-  }
-  clearTimeout(timer)
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '')
-    throw new Error(`LLM 请求失败 ${resp.status}: ${text.slice(0, 300)}`)
-  }
-  const data = await resp.json()
-  return { success: true, response: data.choices?.[0]?.message?.content || JSON.stringify(data) }
+  return settingsApi.testModelConfig(config)
 }
 
-export default { documentsApi, parseApi, graphApi, searchApi, settingsApi, ideaApi, projectsApi, logsApi, testLLMConnection }
+export default { documentsApi, parseApi, graphApi, searchApi, settingsApi, ideaApi, projectsApi, logsApi, systemApi, testLLMConnection }

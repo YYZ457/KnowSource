@@ -3,20 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="知源 KnowSource 离线知识图谱交互体验：展开跨文档关系并回到原文证据。">
+<meta name="theme-color" content="#0c1927">
 <title>知源 KnowSource - 学术论文知识图谱可视化</title>
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="d3.bundle.min.js"></script>
 <style>
+/* Warm paper × ink × teal — aligned with the desktop product */
+:root{
+  --paper:#f7f2e8;--paper-2:#efe7d9;--surface:#fffdf8;--ink:#0c1927;
+  --text:#263746;--muted:#73808a;--line:#ddd4c5;--teal:#118779;--teal-2:#22a699;
+  --teal-soft:#dceee9;--amber:#c47b18;
+}
 *{margin:0;padding:0;box-sizing:border-box;}
-html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","PingFang SC","Helvetica Neue",sans-serif;background:#f0f2f5;}
+html,body{width:100%;height:100%;overflow:hidden;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--paper);color:var(--text);}
 
 /* ===== Header ===== */
 .header{
-  height:48px;background:linear-gradient(135deg,#1a365d 0%,#2b6cb0 100%);
+  height:48px;background:linear-gradient(135deg,var(--ink) 0%,#173447 100%);
   color:#fff;display:flex;align-items:center;padding:0 16px;
   box-shadow:0 2px 8px rgba(0,0,0,.12);position:relative;z-index:100;
 }
 .logo{font-size:18px;font-weight:700;letter-spacing:1px;margin-right:20px;white-space:nowrap;}
-.logo span{color:#63b3ed;}
+.logo span{color:#52d2c2;}
 .legend{display:flex;gap:8px;align-items:center;flex:1;min-width:0;}
 .legend-item{
   display:flex;align-items:center;gap:5px;cursor:pointer;
@@ -34,20 +42,20 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","
 
 /* ===== Tree Panel ===== */
 .tree-panel{
-  width:240px;min-width:180px;background:#fff;border-right:1px solid #e2e8f0;
+  width:240px;min-width:180px;background:var(--surface);border-right:1px solid var(--line);
   overflow-y:auto;overflow-x:hidden;font-size:13px;flex-shrink:0;
 }
 .tree-hd{
-  padding:10px 14px;font-weight:700;color:#2d3748;border-bottom:1px solid #edf2f7;
-  font-size:13px;background:#f7fafc;position:sticky;top:0;z-index:10;
+  padding:10px 14px;font-weight:700;color:var(--ink);border-bottom:1px solid var(--line);
+  font-size:13px;background:var(--paper);position:sticky;top:0;z-index:10;
 }
 .tn{cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden;}
 .tn-c{
   display:flex;align-items:center;padding:4px 6px;border-radius:3px;
   margin:1px 4px;transition:background .15s;
 }
-.tn-c:hover{background:#ebf8ff;}
-.tn-c.sel{background:#bee3f8;}
+.tn-c:hover{background:var(--teal-soft);}
+.tn-c.sel{background:#c5e7df;}
 .tn-arrow{
   width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;
   flex-shrink:0;transition:transform .2s;
@@ -57,7 +65,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","
   border-bottom:3px solid transparent;transition:border-color .2s;
 }
 .tn-arrow.exp{transform:rotate(90deg);}
-.tn-arrow.exp::before{border-left-color:#2b6cb0;}
+.tn-arrow.exp::before{border-left-color:var(--teal);}
 .tn-arrow.hidden{visibility:hidden;}
 .tn-icon{
   width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;
@@ -66,24 +74,24 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","
 .tn-icon .idoc{width:10px;height:11px;background:currentColor;border-radius:1.5px;}
 .tn-icon .ich{width:8px;height:8px;background:currentColor;border-radius:50%;}
 .tn-icon .ient{width:6px;height:6px;background:currentColor;border-radius:50%;}
-.tn-label{overflow:hidden;text-overflow:ellipsis;flex:1;font-size:12.5px;color:#2d3748;}
+.tn-label{overflow:hidden;text-overflow:ellipsis;flex:1;font-size:12.5px;color:var(--text);}
 .tn-children{display:none;}
 .tn-children.show{display:block;}
 
 /* ===== Resizer ===== */
 .resizer{width:4px;cursor:col-resize;background:transparent;transition:background .2s;z-index:50;flex-shrink:0;}
-.resizer:hover,.resizer.drag{background:#4299e1;}
+.resizer:hover,.resizer.drag{background:var(--teal-2);}
 
 /* ===== Graph Panel ===== */
-.graph-panel{flex:1;position:relative;background:#fff;overflow:hidden;min-width:250px;}
+.graph-panel{flex:1;position:relative;background:var(--surface);overflow:hidden;min-width:250px;}
 .graph-panel svg{width:100%;height:100%;display:block;}
 .graph-tip{
-  position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,.92);
-  padding:6px 12px;border-radius:5px;font-size:11px;color:#718096;
+  position:absolute;bottom:10px;left:10px;background:rgba(255,253,248,.94);
+  padding:6px 12px;border:1px solid var(--line);border-radius:7px;font-size:11px;color:var(--muted);
   box-shadow:0 1px 4px rgba(0,0,0,.08);pointer-events:none;line-height:1.6;
 }
 .tooltip{
-  position:absolute;background:rgba(26,54,93,.95);color:#fff;padding:7px 11px;
+  position:absolute;background:rgba(12,25,39,.96);color:#fff;padding:7px 11px;
   border-radius:5px;font-size:11.5px;pointer-events:none;opacity:0;
   transition:opacity .15s;z-index:200;max-width:240px;line-height:1.5;
   box-shadow:0 2px 8px rgba(0,0,0,.2);
@@ -91,12 +99,12 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","
 
 /* ===== PDF Panel ===== */
 .pdf-panel{
-  width:360px;min-width:260px;background:#e2e8f0;overflow-y:auto;
-  padding:16px 12px;border-left:1px solid #e2e8f0;flex-shrink:0;
+  width:360px;min-width:260px;background:var(--paper-2);overflow-y:auto;
+  padding:16px 12px;border-left:1px solid var(--line);flex-shrink:0;
 }
 .pdf-page{
-  width:100%;max-width:336px;margin:0 auto 16px auto;background:#fff;
-  box-shadow:0 2px 10px rgba(0,0,0,.12);border:1px solid #cbd5e0;
+  width:100%;max-width:336px;margin:0 auto 16px auto;background:var(--surface);
+  box-shadow:0 2px 10px rgba(12,25,39,.10);border:1px solid var(--line);
   padding:32px 30px 24px;
 }
 .pdf-hd{
@@ -135,10 +143,10 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","
   font-family:"SimSun","Songti SC",serif;font-size:9.5px;line-height:1.8;
   text-align:justify;text-indent:2em;color:#2d3748;margin-bottom:5px;
 }
-.ent{background:#fef5c8;padding:0 2px;border-radius:2px;cursor:pointer;transition:background .15s;}
-.ent:hover{background:#f6e05e;}
-.ent.hl{background:#ed8936;color:#fff;}
-.ref{font-size:7px;vertical-align:super;color:#4299e1;}
+.ent{background:#dceee9;padding:0 2px;border-radius:2px;cursor:pointer;transition:background .15s;}
+.ent:hover{background:#b8ddd4;}
+.ent.hl{background:var(--teal);color:#fff;}
+.ref{font-size:7px;vertical-align:super;color:var(--teal);}
 
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar{width:6px;height:6px;}
@@ -149,9 +157,9 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","
 /* ===== SVG Node Styles ===== */
 .link{stroke:#cbd5e0;stroke-opacity:.5;fill:none;transition:stroke-opacity.2s;}
 .link.dim{stroke-opacity:.15;}
-.link.hl{stroke:#4299e1;stroke-opacity:1;stroke-width:2.5;}
-.link.cross{stroke:#f6ad55;stroke-opacity:.5;stroke-dasharray:4,3;}
-.link.cross.hl{stroke:#ed8936;stroke-opacity:1;stroke-width:2;}
+.link.hl{stroke:var(--teal-2);stroke-opacity:1;stroke-width:2.5;}
+.link.cross{stroke:var(--amber);stroke-opacity:.5;stroke-dasharray:4,3;}
+.link.cross.hl{stroke:var(--amber);stroke-opacity:1;stroke-width:2;}
 .node-doc rect{stroke-width:2px;cursor:pointer;filter:drop-shadow(0 1px 3px rgba(0,0,0,.15));}
 .node-ch circle{stroke-width:2px;stroke:#fff;cursor:pointer;}
 .node-ent circle{stroke-width:1px;stroke:#fff;cursor:pointer;}
@@ -160,6 +168,18 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","
   font-family:"Microsoft YaHei",sans-serif;text-anchor:middle;
 }
 .node-doc .nlabel{font-size:11px;font-weight:600;fill:#1a202c;}
+@media(max-width:820px){
+  .header{height:44px;padding:0 10px;}
+  .logo{font-size:15px;margin-right:10px;}
+  .legend{gap:3px;overflow-x:auto;scrollbar-width:none;}
+  .legend::-webkit-scrollbar{display:none;}
+  .legend-item{padding:3px 7px;font-size:10px;}
+  .header-ver{display:none;}
+  .main{height:calc(100% - 44px);}
+  .tree-panel,.pdf-panel,.resizer{display:none;}
+  .graph-panel{min-width:0;width:100%;}
+  .graph-tip{left:8px;right:8px;bottom:8px;text-align:center;font-size:10px;}
+}
 </style>
 </head>
 <body>
@@ -185,10 +205,10 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:"Microsoft YaHei","
 
 <script>
 // ============ DATA ============
-const COLORS={doc1:'#e53e3e',doc2:'#3182ce',doc3:'#38a169'};
+const COLORS={doc1:'#118779',doc2:'#3f6f8e',doc3:'#c47b18'};
 const DOCNAMES={doc1:'注意力机制研究进展',doc2:'图卷积神经网络综述',doc3:'预训练语言模型综述'};
 const DOCSHORT={doc1:'注意力机制',doc2:'图卷积网络',doc3:'预训练模型'};
-const ENTCOLORS={model:'#805ad5',method:'#dd6b20',other:'#718096'};
+const ENTCOLORS={model:'#4f6fa8',method:'#118779',other:'#7c7062'};
 
 const MODEL_SET=new Set(['Transformer','BERT','GPT','GPT-2','GPT-3','LSTM','Encoder-Decoder','GCN','GAT','GATv2',
   'ChebNet','GraphSAGE','STN','SENet','CBAM','ViT','ELMo','RoBERTa','ALBERT','SpanBERT','ERNIE','XLNet',

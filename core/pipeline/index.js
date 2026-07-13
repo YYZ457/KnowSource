@@ -389,7 +389,7 @@ async function runPipeline(files, options = {}) {
           // 简单按 level 重建父子关系（buildHeadingTree 已提取为模块级函数）
           docHeadingsTree.push(...buildHeadingTree(rawHeadings));
 
-          const kg = await buildKnowledgeGraph(doc.rawText || '', [], { useAI: false, seedTerms: docSeedTerms, headings: docHeadingsTree, minSeedTerms: options.minSeedTerms });
+          const kg = await buildKnowledgeGraph(doc.rawText || '', [], { useAI: false, seedTerms: docSeedTerms, headings: docHeadingsTree, minSeedTerms: options.minSeedTerms, docId: doc.meta.docId });
 
           // 对无监督/段落扩展出的实体补充 LLM 特异性评分（带标题上下文）
           if (provider && provider.name !== 'stub') {
@@ -509,10 +509,11 @@ async function runPipeline(files, options = {}) {
         // 生成 document 顶层节点（仅路径 B 的文档；路径 A 已由 convertToGraph 生成）
         for (const { doc } of stepwiseDocs) {
           const docIndex = documents.indexOf(doc);
-          const docNodeId = `doc-${doc.meta.docId}`;
+          const docNodeId = doc.meta.docId.startsWith('doc-') ? doc.meta.docId : `doc-${doc.meta.docId}`;
           graphNodes.push({
             id: docNodeId,
             type: 'document',
+            label: doc.meta.name || `文档${docIndex + 1}`,
             content: doc.meta.name || `文档${docIndex + 1}`,
             weight: 1,
             source: { docId: doc.meta.docId, page: 0 },
@@ -524,10 +525,11 @@ async function runPipeline(files, options = {}) {
         for (const [docId, docHeadings] of headingsByDoc) {
           if (docHeadings.length === 0) continue;
           const minLevel = Math.min(...docHeadings.map(h => h.level || 99));
+          const docNodeId = docId.startsWith('doc-') ? docId : `doc-${docId}`;
           for (const h of docHeadings) {
             if ((h.level || 99) === minLevel) {
               graphEdges.push({
-                from: `doc-${docId}`,
+                from: docNodeId,
                 to: `h_${h.id}`,
                 type: 'contains',
                 weight: 1,
@@ -545,8 +547,9 @@ async function runPipeline(files, options = {}) {
           if (headingTargets.has(hNode.id)) continue;
           const docId = hNode.source?.docId;
           if (docId) {
+            const docNodeId = docId.startsWith('doc-') ? docId : `doc-${docId}`;
             graphEdges.push({
-              from: `doc-${docId}`,
+              from: docNodeId,
               to: hNode.id,
               type: 'contains',
               weight: 1,

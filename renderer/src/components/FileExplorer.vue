@@ -7,8 +7,9 @@
     <!-- 顶部:项目选择 + 导入 -->
     <div class="panel__header file-explorer__header">
       <div class="file-explorer__project">
-        <label class="file-explorer__project-label">项目</label>
+        <label class="file-explorer__project-label" for="project-filter">项目</label>
         <select
+          id="project-filter"
           v-model="selectedProjectId"
           class="file-explorer__select"
           @change="onProjectChange"
@@ -19,7 +20,7 @@
           </option>
         </select>
       </div>
-      <button class="btn btn--primary btn--sm" @click="onImport" :disabled="importing">
+      <button class="btn btn--primary btn--sm" @click="onImport" :disabled="importing" aria-label="导入本地文档">
         <span v-if="importing" class="spinner"></span>
         <svg v-else viewBox="0 0 24 24" fill="none" width="14" height="14">
           <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -30,6 +31,7 @@
         ref="fileInput"
         type="file"
         multiple
+        accept=".pdf,.doc,.docx,.md,.markdown,.txt,.html,.htm,.csv,.json,.ppt,.pptx,.jpg,.jpeg,.png"
         class="file-explorer__file-input"
         @change="handleFileInput"
       />
@@ -50,17 +52,28 @@
           <path d="M14 2v6h6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
         </svg>
         <p>暂无文档</p>
-        <p class="file-explorer__empty-hint">点击右上角「导入」按钮添加文档</p>
+        <p class="file-explorer__empty-hint">导入研究资料，或先用示例快速体验。</p>
+        <div class="file-explorer__empty-actions">
+          <button class="btn btn--primary btn--sm" type="button" :disabled="importing" @click="onImport">导入文档</button>
+          <button class="btn btn--sm" type="button" :disabled="sampleImporting" @click="importSample">
+            <span v-if="sampleImporting" class="spinner" aria-hidden="true"></span>
+            {{ sampleImporting ? '载入中…' : '载入示例' }}
+          </button>
+        </div>
       </div>
 
       <!-- 文档列表 -->
-      <ul v-else class="doc-list">
+      <ul v-else class="doc-list" role="listbox" aria-label="文档列表">
         <li
-          v-for="doc in docsStore.documents"
+          v-for="(doc, index) in docsStore.documents"
           :key="doc.id"
           class="doc-item"
           :class="{ 'doc-item--active': doc.id === docsStore.selectedDocId }"
+          role="option"
+          :aria-selected="doc.id === docsStore.selectedDocId"
+          :tabindex="docTabIndex(doc, index)"
           @click="onDocClick(doc)"
+          @keydown="onDocKeydown($event, doc, index)"
         >
           <span class="doc-item__icon" :style="{ color: typeMeta(doc).color }">
             <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
@@ -83,7 +96,7 @@
             </div>
             <!-- 解析进度条 -->
             <div v-if="getParsePercent(doc.id) != null" class="doc-item__progress">
-              <div class="progress-bar">
+              <div class="progress-bar" role="progressbar" aria-label="解析进度" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(getParsePercent(doc.id))">
                 <div
                   class="progress-bar__fill"
                   :style="{ width: getParsePercent(doc.id) + '%' }"
@@ -96,6 +109,7 @@
           <button
             class="doc-item__delete icon-btn"
             title="删除文档"
+            :aria-label="`删除文档：${docName(doc)}`"
             @click.stop="onDelete(doc)"
           >
             <svg viewBox="0 0 24 24" fill="none" width="15" height="15">
@@ -112,7 +126,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useDocsStore, useProjectStore, useUiStore, useGraphStore, useIdeaStore } from '../stores'
-import { parseApi } from '../api/client'
+import { parseApi, documentsApi } from '../api/client'
 
 const docsStore = useDocsStore()
 const projectStore = useProjectStore()
@@ -122,6 +136,7 @@ const ideaStore = useIdeaStore()
 
 const fileInput = ref(null)
 const importing = ref(false)
+const sampleImporting = ref(false)
 const selectedProjectId = ref(null)
 
 // ===== 文件类型映射 =====
@@ -246,6 +261,32 @@ function onDocClick(doc) {
   docsStore.selectDoc(doc.id)
 }
 
+function docTabIndex(doc, index) {
+  if (doc.id === docsStore.selectedDocId) return 0
+  return !docsStore.selectedDocId && index === 0 ? 0 : -1
+}
+
+function onDocKeydown(event, doc, index) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    onDocClick(doc)
+    return
+  }
+  const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End']
+  if (!keys.includes(event.key)) return
+  event.preventDefault()
+  let nextIndex = index
+  if (event.key === 'ArrowDown') nextIndex = Math.min(index + 1, docsStore.documents.length - 1)
+  if (event.key === 'ArrowUp') nextIndex = Math.max(index - 1, 0)
+  if (event.key === 'Home') nextIndex = 0
+  if (event.key === 'End') nextIndex = docsStore.documents.length - 1
+  const nextDoc = docsStore.documents[nextIndex]
+  if (nextDoc) docsStore.selectDoc(nextDoc.id)
+  requestAnimationFrame(() => {
+    event.currentTarget.closest('.doc-list')?.querySelectorAll('.doc-item')[nextIndex]?.focus()
+  })
+}
+
 async function onProjectChange() {
   if (selectedProjectId.value != null) {
     await projectStore.switchTo(selectedProjectId.value)
@@ -325,6 +366,22 @@ async function onImport() {
   }
 }
 
+async function importSample() {
+  if (sampleImporting.value) return
+  sampleImporting.value = true
+  try {
+    const result = await documentsApi.importSample()
+    if (result?.success === false && !result?.skipped) throw new Error(result.error || '示例导入失败')
+    await docsStore.load()
+    if (!docsStore.selectedDocId && docsStore.documents[0]?.id) docsStore.selectDoc(docsStore.documents[0].id)
+    uiStore.toast(result?.skipped ? '示例文档已存在' : '示例文档已载入', 'success')
+  } catch (e) {
+    uiStore.toast('载入示例失败：' + (e.message || e), 'error')
+  } finally {
+    sampleImporting.value = false
+  }
+}
+
 async function handleFileInput(event) {
   const files = Array.from(event.target.files || [])
   if (files.length === 0) return
@@ -375,6 +432,7 @@ function onDelete(doc) {
 
 // ===== 生命周期 =====
 onMounted(async () => {
+  window.addEventListener('ks-import-files', onImport)
   await Promise.all([docsStore.load(), projectStore.load()])
   if (projectStore.currentProject) {
     selectedProjectId.value = projectStore.currentProject.id
@@ -384,6 +442,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer)
+  window.removeEventListener('ks-import-files', onImport)
 })
 </script>
 
@@ -451,6 +510,13 @@ onBeforeUnmount(() => {
   margin-top: 4px;
   opacity: 0.7;
 }
+.file-explorer__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 14px;
+}
 
 /* ===== 文档列表 ===== */
 .doc-list {
@@ -472,6 +538,10 @@ onBeforeUnmount(() => {
 }
 .doc-item:hover {
   background: var(--bg-hover);
+}
+.doc-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .doc-item--active {
   background: var(--accent-dim);
@@ -573,7 +643,8 @@ onBeforeUnmount(() => {
   opacity: 0;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
-.doc-item:hover .doc-item__delete {
+.doc-item:hover .doc-item__delete,
+.doc-item:focus-within .doc-item__delete {
   opacity: 1;
 }
 .doc-item__delete:hover {

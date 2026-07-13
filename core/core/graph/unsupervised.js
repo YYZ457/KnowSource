@@ -80,6 +80,8 @@ const MATH_VAR_PATTERN = /^(dx|dy|dz|dt|cov|var|std|sd|se|exp|ex|log|ln|lim|sin|
 const HEADING_NUMBER_PATTERN = /^\s*\d+(?:\.\d+)*\s*[\u4e00-\u9fa5]/;
 const FRAGMENT_START_PATTERN = /^[的是在中为和以与或得次量互维\)\]）】]/;
 const FRAGMENT_END_PATTERN = /[的是为与]$/;
+// 扩展碎片词首字检查：仅在短词(≤5字)上生效，避免误伤"等价关系""度量学习"等合法术语
+const FRAGMENT_START_SHORT_PATTERN = /^[等度才京宝层们被把将向由而且但则即若如虽然因故所之其此彼某该第章节页图表例解答题问述各约本个种类项目条件份回遍趟]/;
 // 通用结构性垃圾词模式：断词（以虚词结尾且≤5字）、公式残留、章节编号开头
 // 不再枚举领域特定断词，由结构性模式 + PMI + 子串抑制自动过滤
 const JUNK_WORDS = /^([^\u4e00-\u9fa5a-zA-Z]{0,3}[的是为与以于从到在由向或及等]$|^[a-zA-Z]\s+[\u4e00-\u9fa5]|^[IVXivx]$)/i;
@@ -250,6 +252,8 @@ function isGarbageEntity(word) {
   if (HEADING_NUMBER_PATTERN.test(word)) return true;
   if (FRAGMENT_START_PATTERN.test(word)) return true;
   if (FRAGMENT_END_PATTERN.test(word) && word.length <= 5) return true;
+  // 扩展碎片词检查：短词(≤5字)以常见断词字开头时过滤
+  if (word.length <= 5 && FRAGMENT_START_SHORT_PATTERN.test(word)) return true;
   if (/[+=<>^~]/.test(word)) return true;
   // 过滤包含逗号、顿号等的多词拼接或断裂标签
   if (/[，,、]/.test(word)) return true;
@@ -303,6 +307,9 @@ function isQualityWord(word, pmiScores, freq) {
 
   // ★ 过滤以"的""是""为""与"结尾的断词
   if (FRAGMENT_END_PATTERN.test(word) && word.length <= 5) return false;
+
+  // ★ 扩展碎片词检查：短词(≤5字)以常见断词字开头时过滤
+  if (word.length <= 5 && FRAGMENT_START_SHORT_PATTERN.test(word)) return false;
 
   // ★ 过滤通用功能动词/教材套话（VERB_FUNCTION_WORDS）
   if (VERB_FUNCTION_WORDS.has(word)) return false;

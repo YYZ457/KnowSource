@@ -123,7 +123,7 @@
         </div>
         <div class="legend-section">
           <div class="legend-subtitle">颜色 = 所属文档</div>
-          <div class="legend-item" v-for="doc in docColors" :key="doc.id">
+          <div class="legend-item legend-item--clickable" v-for="doc in docColors" :key="doc.id" @click="toggleDocFocus(doc.id)" :class="{ 'legend-item--active': focusedDocId === doc.id }">
             <span class="legend-color" :style="{ background: doc.color }"></span>
             <span class="legend-label">{{ doc.name }}</span>
           </div>
@@ -148,6 +148,17 @@
           <div class="legend-item">
             <svg width="20" height="14"><rect x="1" y="1" width="18" height="12" rx="2" fill="var(--text-3)" opacity="0.3" stroke-width="1"/></svg>
             <span class="legend-label">细 = 概念/实体</span>
+          </div>
+        </div>
+        <div class="legend-section">
+          <div class="legend-subtitle">边线</div>
+          <div class="legend-item">
+            <svg width="20" height="14"><line x1="2" y1="7" x2="18" y2="7" stroke="var(--text-3)" stroke-width="1.5"/></svg>
+            <span class="legend-label">实线 = 同文档</span>
+          </div>
+          <div class="legend-item">
+            <svg width="20" height="14"><line x1="2" y1="7" x2="18" y2="7" stroke="var(--text-3)" stroke-width="1.5" stroke-dasharray="4 3"/></svg>
+            <span class="legend-label">虚线 = 跨文档</span>
           </div>
         </div>
         <div class="legend-section legend-interactions">
@@ -256,39 +267,135 @@ const DOC_COLORS = [
   '#14b8a6', // teal
 ]
 
+// Build a stable docId → color map from both docsStore and graph nodes.
+// This ensures colors are assigned even if docsStore hasn't loaded yet,
+// and that every unique docId in the graph gets a distinct color.
+const docColorMap = computed(() => {
+  const map = new Map()
+  let nextIdx = 0
+  // First pass: assign colors based on docsStore.documents order
+  for (const doc of docsStore.documents) {
+    if (doc.id && !map.has(doc.id)) {
+      map.set(doc.id, DOC_COLORS[nextIdx % DOC_COLORS.length])
+      nextIdx++
+    }
+  }
+  // Second pass: for docIds found in graph nodes but not in docsStore,
+  // assign the next available colors so they still get distinct hues
+  for (const n of graphStore.nodes) {
+    const did = n.source?.docId || n.meta?.docId || n.docId
+    if (did && !map.has(did)) {
+      map.set(did, DOC_COLORS[nextIdx % DOC_COLORS.length])
+      nextIdx++
+    }
+  }
+  return map
+})
+
 function getDocColor(docId) {
   if (!docId) return '#64748b' // slate for no-doc nodes
-  const idx = docsStore.documents.findIndex(d => d.id === docId)
-  if (idx < 0) return '#64748b'
-  return DOC_COLORS[idx % DOC_COLORS.length]
+  return docColorMap.value.get(docId) || '#64748b'
 }
 
 const docColors = computed(() => {
   return docsStore.documents.map((doc, idx) => ({
     id: doc.id,
-    name: doc.name || doc.title || doc.id.slice(0, 8),
+    name: doc.name || doc.title || (doc.id ? doc.id.slice(0, 8) : '未知'),
     color: DOC_COLORS[idx % DOC_COLORS.length]
   }))
 })
 
 // ===== Node sizing =====
+// 节点宽度自适应文本内容，避免长标签被截断。
+// NODE_MAX_WIDTH 为节点最大宽度，超过该宽度时才截断并依赖 tooltip 显示全文。
+const NODE_MAX_WIDTH = 300
+const NODE_MIN_WIDTH = 64
+const NODE_TEXT_PADDING = 16 // 节点内文字左右内边距之和
+
+// 估算字符串渲染宽度：CJK 字符按全宽（1em），其余字符按 0.6em。
+// 旧的截断逻辑统一按 0.6em 估算，导致中文标签被过早截断。
+function estimateTextWidth(text, fontSize) {
+  if (!text) return 0
+  const s = String(text)
+  let width = 0
+  for (const ch of s) {
+    const code = ch.codePointAt(0)
+    const isCJK =
+      (code >= 0x4e00 && code <= 0x9fff) || // CJK 统一表意文字
+      (code >= 0x3400 && code <= 0x4dbf) || // CJK 扩展 A
+      (code >= 0x3000 && code <= 0x30ff) || // CJK 符号、平假名、片假名
+      (code >= 0xff00 && code <= 0xffef)    // 全角形式
+    width += isCJK ? fontSize : fontSize * 0.6
+  }
+  return width
+}
+
+// 按像素宽度截断文本（保留省略号），仅在文本超过最大宽度时使用
+function truncateToWidth(text, fontSize, maxWidth) {
+  const s = String(text)
+  if (estimateTextWidth(s, fontSize) <= maxWidth) return s
+  const ellipsisWidth = fontSize * 0.6
+  let lo = 0, hi = s.length
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2)
+    if (estimateTextWidth(s.slice(0, mid), fontSize) + ellipsisWidth <= maxWidth) lo = mid
+    else hi = mid - 1
+  }
+  return s.slice(0, lo) + '…'
+}
+
+// 获取节点显示文本：短文本完整显示，超长文本按最大可用宽度截断
+function nodeDisplayText(node) {
+  const height = nodeSize(node).height
+  const fontSize = Math.max(10, height * 0.4)
+  const text = String(node.content || node.label || node.name || node.id || '')
+  return truncateToWidth(text, fontSize, NODE_MAX_WIDTH - NODE_TEXT_PADDING)
+}
+
 function nodeSize(node) {
   const s = Number(node.specificity ?? node.weight ?? 0.5)
   const clamped = Math.max(0, Math.min(1, isNaN(s) ? 0.5 : s))
-  // Base size + scale by importance
-  const baseWidth = 60
   const baseHeight = 28
   const scale = 0.7 + clamped * 0.8 // 0.7 to 1.5
+  const height = baseHeight * scale
+  const fontSize = Math.max(10, height * 0.4)
+  // 宽度根据文本内容自适应，短标签由最小宽度兜底，长标签不超过最大宽度
+  const text = String(node.content || node.label || node.name || node.id || '')
+  const textWidth = estimateTextWidth(text, fontSize)
+  const minWidth = NODE_MIN_WIDTH * scale
+  let width = Math.max(minWidth, textWidth + NODE_TEXT_PADDING)
+  width = Math.min(width, NODE_MAX_WIDTH)
   return {
-    width: baseWidth * scale,
-    height: baseHeight * scale,
-    rx: node.type === 'idea' ? (baseHeight * scale) / 2 : 4 // pill shape for ideas
+    width,
+    height,
+    rx: node.type === 'idea' ? height / 2 : 4 // pill shape for ideas
   }
 }
 
 function nodeColor(node) {
-  const docId = node.source?.docId || node.meta?.docId || node.docId
+  const docId = getNodeDocId(node)
   return getDocColor(docId)
+}
+
+// Extract docId from a node (supports multiple field layouts)
+function getNodeDocId(node) {
+  if (!node) return null
+  return node.source?.docId || node.meta?.docId || node.docId || null
+}
+
+// Determine if an edge is a cross-document link.
+// An edge is a cross-link if its type is 'cross-link' OR its two endpoints
+// belong to different documents (different docId).
+function isCrossLink(edge) {
+  if (edge.type === 'cross-link') return true
+  const s = typeof edge.source === 'object' ? edge.source : null
+  const t = typeof edge.target === 'object' ? edge.target : null
+  if (s && t) {
+    const sDoc = getNodeDocId(s)
+    const tDoc = getNodeDocId(t)
+    if (sDoc && tDoc && sDoc !== tDoc) return true
+  }
+  return false
 }
 
 // 从 CSS 变量获取颜色，用于 D3 渲染（支持主题切换）
@@ -302,19 +409,18 @@ function nodeTextColor() {
   return '#ffffff'
 }
 
-// 边线颜色 — 从 CSS 变量获取
-function edgeStrokeColor() {
-  return cssVar('--border-strong') || 'rgba(148,163,184,0.4)'
+// 边线颜色 — 同文档边用默认色，跨文档边用橙色
+function edgeStrokeColor(edge) {
+  const baseColor = cssVar('--border-strong') || 'rgba(148,163,184,0.4)'
+  if (edge && isCrossLink(edge)) {
+    return '#e89030'  // 橙色，用于跨文档连接
+  }
+  return baseColor
 }
 
 // 淡化边线颜色
 function edgeFadedColor() {
   return cssVar('--border') || 'rgba(148,163,184,0.15)'
-}
-
-function truncate(str, n) {
-  const s = String(str)
-  return s.length > n ? s.slice(0, n) + '…' : s
 }
 
 // ===== Hierarchy level by node type =====
@@ -366,22 +472,21 @@ function computeHierarchy(nodes, edges) {
     }
   }
 
-  // Auto-expand roots on fresh load
-  if (expandedNodes.value.size === 0) {
-    for (const id of rootNodes) {
-      if (nodeChildrenMap[id]?.length) expandedNodes.value.add(id)
-    }
-  }
-
-  // Compute visibility via BFS from expanded roots
+  // Match the interactive collapse rules: document roots are always visible;
+  // non-document roots only appear after being explicitly expanded.
   visibleNodeIds = new Set()
-  const queue = [...rootNodes]
-  while (queue.length) {
-    const id = queue.shift()
-    if (visibleNodeIds.has(id)) continue
-    visibleNodeIds.add(id)
-    if (expandedNodes.value.has(id) && nodeChildrenMap[id]) {
-      queue.push(...nodeChildrenMap[id])
+  for (const rootId of rootNodes) {
+    const isDocRoot = nodeLevel[rootId] === 0
+    if (expandedNodes.value.has(rootId) || isDocRoot) visibleNodeIds.add(rootId)
+    const queue = [rootId]
+    while (queue.length) {
+      const id = queue.shift()
+      if (!expandedNodes.value.has(id)) continue
+      const children = nodeChildrenMap[id] || []
+      for (const childId of children) {
+        visibleNodeIds.add(childId)
+        queue.push(childId)
+      }
     }
   }
 }
@@ -414,9 +519,10 @@ let zoomBehavior = null
 let linkSel = null
 let nodeSel = null
 let resizeObserver = null
+let clickTimer = null  // 单击/双击区分定时器
 const currentNodes = ref([])
 const currentLinks = ref([])
-const legendVisible = ref(true)
+const legendVisible = ref(false)
 
 // ===== Edit dialog state =====
 const editDialog = ref({
@@ -520,11 +626,15 @@ function buildGraph() {
   linkSel.exit().transition().duration(300).attr('stroke-opacity', 0).remove()
   const linkEnter = linkSel.enter().append('line')
     .attr('class', 'edge')
-    .attr('stroke', edgeStrokeColor())
+    .attr('stroke', d => edgeStrokeColor(d))
     .attr('stroke-width', 1.5)
     .attr('stroke-opacity', 0)
+    .attr('stroke-dasharray', d => isCrossLink(d) ? '6 4' : null)
   linkSel = linkEnter.merge(linkSel)
-  linkSel.transition().duration(350).attr('stroke-opacity', 0.6)
+  linkSel
+    .attr('stroke', d => edgeStrokeColor(d))
+    .attr('stroke-dasharray', d => isCrossLink(d) ? '6 4' : null)
+    .transition().duration(350).attr('stroke-opacity', 0.6)
 
   // --- Nodes: enter / update / exit ---
   if (!nodeSel) {
@@ -566,6 +676,10 @@ function buildGraph() {
     })
     .attr('filter', 'url(#node-shadow)')
 
+  // 原生 tooltip：鼠标悬停时显示完整标签（即使节点文本被截断也能查看全文）
+  nodeEnter.append('title')
+    .text(d => String(d.content || d.label || d.name || d.id || ''))
+
   nodeEnter.append('text')
     .attr('class', 'node-text')
     .attr('text-anchor', 'middle')
@@ -574,10 +688,7 @@ function buildGraph() {
     .attr('font-size', d => Math.max(10, nodeSize(d).height * 0.4))
     .attr('font-weight', 500)
     .attr('pointer-events', 'none')
-    .text(d => {
-      const maxChars = Math.floor(nodeSize(d).width / (Math.max(10, nodeSize(d).height * 0.4) * 0.6))
-      return truncate(d.content || d.label || d.name || d.id || '', maxChars)
-    })
+    .text(d => nodeDisplayText(d))
 
   // Fade in entering nodes
   nodeEnter.transition().duration(350).attr('opacity', 1)
@@ -603,13 +714,23 @@ function buildGraph() {
   nodeSel
     .on('click', (event, d) => {
       event.stopPropagation()
-      if (nodeChildrenMap[d.id]?.length) toggleExpand(d.id)
+      // 选中节点立即生效（无延迟）
       const original = graphStore.nodes.find(n => n.id === d.id) || d
       graphStore.selectedNode = original
       updateSelection()
+      // 展开/收起延迟执行，双击时取消
+      if (nodeChildrenMap[d.id]?.length) {
+        if (clickTimer) clearTimeout(clickTimer)
+        clickTimer = setTimeout(() => {
+          clickTimer = null
+          toggleExpand(d.id)
+        }, 250)
+      }
     })
     .on('dblclick', (event, d) => {
       event.stopPropagation(); event.preventDefault()
+      // 取消单击的展开/收起定时器
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
       const docId = d.source?.docId || d.meta?.docId || d.docId
       if (docId) { uiStore.setView('documents'); docsStore.selectDoc(docId) }
     })
@@ -649,11 +770,13 @@ function buildGraph() {
   // Rebuild expand/collapse badges
   rebuildBadges()
   updateSelection()
+  // Re-apply search highlight if a search is active
+  if (hasSearchQuery()) applySearchHighlight()
 }
 
 // ===== Smooth visibility update for expand/collapse (no full rebuild) =====
 function updateGraphVisibility() {
-  if (!mainG || !nodeSel || !linkSel) return
+  if (!mainG || !nodeSel || !linkSel || !simulation) return
 
   // Recompute visibility based on current expandedNodes
   visibleNodeIds = new Set()
@@ -720,6 +843,10 @@ function updateGraphVisibility() {
     .attr('stroke-width', d => { const lvl = typeLevel(d.type); return lvl === 0 ? 3 : lvl === 1 ? 2.5 : 1.5 })
     .attr('filter', 'url(#node-shadow)')
 
+  // 原生 tooltip：鼠标悬停时显示完整标签（即使节点文本被截断也能查看全文）
+  nodeEnter.append('title')
+    .text(d => String(d.content || d.label || d.name || d.id || ''))
+
   nodeEnter.append('text')
     .attr('class', 'node-text')
     .attr('text-anchor', 'middle')
@@ -728,10 +855,7 @@ function updateGraphVisibility() {
     .attr('font-size', d => Math.max(10, nodeSize(d).height * 0.4))
     .attr('font-weight', 500)
     .attr('pointer-events', 'none')
-    .text(d => {
-      const maxChars = Math.floor(nodeSize(d).width / (Math.max(10, nodeSize(d).height * 0.4) * 0.6))
-      return truncate(d.content || d.label || d.name || d.id || '', maxChars)
-    })
+    .text(d => nodeDisplayText(d))
 
   nodeEnter.transition().duration(350).attr('opacity', 1)
   nodeSel = nodeEnter.merge(nodeSel)
@@ -740,13 +864,23 @@ function updateGraphVisibility() {
   nodeSel
     .on('click', (event, d) => {
       event.stopPropagation()
-      if (nodeChildrenMap[d.id]?.length) toggleExpand(d.id)
+      // 选中节点立即生效（无延迟）
       const original = graphStore.nodes.find(n => n.id === d.id) || d
       graphStore.selectedNode = original
       updateSelection()
+      // 展开/收起延迟执行，双击时取消
+      if (nodeChildrenMap[d.id]?.length) {
+        if (clickTimer) clearTimeout(clickTimer)
+        clickTimer = setTimeout(() => {
+          clickTimer = null
+          toggleExpand(d.id)
+        }, 250)
+      }
     })
     .on('dblclick', (event, d) => {
       event.stopPropagation(); event.preventDefault()
+      // 取消单击的展开/收起定时器
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
       const docId = d.source?.docId || d.meta?.docId || d.docId
       if (docId) { uiStore.setView('documents'); docsStore.selectDoc(docId) }
     })
@@ -780,12 +914,16 @@ function updateGraphVisibility() {
 
   const linkEnter = linkSel.enter().append('line')
     .attr('class', 'edge')
-    .attr('stroke', edgeStrokeColor())
+    .attr('stroke', d => edgeStrokeColor(d))
     .attr('stroke-width', 1.5)
     .attr('stroke-opacity', 0)
+    .attr('stroke-dasharray', d => isCrossLink(d) ? '6 4' : null)
 
   linkSel = linkEnter.merge(linkSel)
-  linkSel.transition().duration(350).attr('stroke-opacity', 0.6)
+  linkSel
+    .attr('stroke', d => edgeStrokeColor(d))
+    .attr('stroke-dasharray', d => isCrossLink(d) ? '6 4' : null)
+    .transition().duration(350).attr('stroke-opacity', 0.6)
 
   // --- Gently update simulation (low alpha = no chaotic flying) ---
   simulation.nodes(currentNodes.value)
@@ -797,6 +935,8 @@ function updateGraphVisibility() {
   // Rebuild expand/collapse badges
   rebuildBadges()
   updateSelection()
+  // Re-apply search highlight if a search is active
+  if (hasSearchQuery()) applySearchHighlight()
 }
 
 // ===== Rebuild expand/collapse badges on all visible nodes =====
@@ -830,6 +970,84 @@ function rebuildBadges() {
   })
 }
 
+// ===== Search highlight =====
+// When the user types in the top-bar search box, matching graph nodes are
+// visually emphasised (bright white border + thicker stroke) while
+// non-matching nodes are dimmed (low opacity).
+
+// ===== Legend document focus =====
+// Clicking a document color in the legend focuses all nodes from that document,
+// dimming nodes from other documents. Clicking again toggles off.
+const focusedDocId = ref(null)
+function toggleDocFocus(docId) {
+  if (focusedDocId.value === docId) {
+    focusedDocId.value = null
+  } else {
+    focusedDocId.value = docId
+  }
+  applyDocFocus()
+}
+function applyDocFocus() {
+  if (!nodeSel) return
+  const selId = graphStore.selectedNode ? graphStore.selectedNode.id : null
+  if (!focusedDocId.value) {
+    // No focus: restore normal appearance (respect search if active)
+    if (!hasSearchQuery()) {
+      nodeSel.transition().duration(200).attr('opacity', 1)
+    }
+    return
+  }
+  // Focus active: dim nodes from other documents
+  nodeSel.transition().duration(200)
+    .attr('opacity', d => {
+      const docId = d.source?.docId || d.meta?.docId || (d.id && d.id.startsWith('doc-') ? d.id : null)
+      return docId === focusedDocId.value ? 1 : 0.15
+    })
+}
+function hasSearchQuery() {
+  return !!(uiStore.searchQuery && uiStore.searchQuery.trim())
+}
+
+function getSearchMatchIds() {
+  const q = (uiStore.searchQuery || '').trim().toLowerCase()
+  if (!q) return null
+  const matches = new Set()
+  for (const n of currentNodes.value) {
+    const text = String(n.content || n.label || n.name || n.id || '').toLowerCase()
+    if (text.includes(q)) matches.add(n.id)
+  }
+  return matches
+}
+
+function applySearchHighlight() {
+  if (!nodeSel) return
+  const matches = getSearchMatchIds()
+  const selId = graphStore.selectedNode ? graphStore.selectedNode.id : null
+  if (!matches) {
+    // No active search: restore normal appearance (respect selection)
+    nodeSel.transition().duration(200).attr('opacity', 1)
+    nodeSel.select('.node-rect')
+      .transition().duration(200)
+      .attr('stroke', d => (d.id === selId ? nodeTextColor() : nodeColor(d)))
+      .attr('stroke-width', d => {
+        if (d.id === selId) return 3.5
+        const lvl = typeLevel(d.type)
+        return lvl === 0 ? 3 : lvl === 1 ? 2.5 : 1.5
+      })
+    return
+  }
+  // Search active: dim non-matching nodes, highlight matching ones
+  nodeSel.transition().duration(200)
+    .attr('opacity', d => (matches.has(d.id) ? 1 : 0.15))
+  nodeSel.select('.node-rect')
+    .transition().duration(200)
+    .attr('stroke', d => {
+      if (d.id === selId) return nodeTextColor()
+      return matches.has(d.id) ? '#ffffff' : nodeColor(d)
+    })
+    .attr('stroke-width', d => (matches.has(d.id) || d.id === selId ? 4 : 1))
+}
+
 // ===== Highlight connected sub-graph on hover =====
 function highlight(node) {
   if (!nodeSel) return
@@ -838,6 +1056,15 @@ function highlight(node) {
   const effectiveNode = node || (graphStore.selectedNode && currentNodes.value.find(n => n.id === graphStore.selectedNode.id) ? graphStore.selectedNode : null)
 
   if (!effectiveNode) {
+    // If search is active, restore search highlight state instead of full reset
+    if (hasSearchQuery()) {
+      applySearchHighlight()
+      linkSel
+        .transition().duration(180)
+        .attr('stroke-opacity', 0.6)
+        .attr('stroke', d => edgeStrokeColor(d))
+      return
+    }
     nodeSel.transition().duration(180).attr('opacity', 1)
     nodeSel.select('.node-rect')
       .transition().duration(180)
@@ -848,7 +1075,7 @@ function highlight(node) {
     linkSel
       .transition().duration(180)
       .attr('stroke-opacity', 0.6)
-      .attr('stroke', edgeStrokeColor())
+      .attr('stroke', d => edgeStrokeColor(d))
     return
   }
 
@@ -881,6 +1108,11 @@ function highlight(node) {
 // ===== Selection highlight =====
 function updateSelection() {
   if (!nodeSel) return
+  // If search is active, search highlight takes precedence over selection styling
+  if (hasSearchQuery()) {
+    applySearchHighlight()
+    return
+  }
   const selId = graphStore.selectedNode ? graphStore.selectedNode.id : null
   nodeSel.select('.node-rect')
     .attr('stroke', d => (d.id === selId ? nodeTextColor() : nodeColor(d)))
@@ -1068,8 +1300,9 @@ function handleResize() {
 // ===== Expand all / Collapse all =====
 function expandAll() {
   const all = new Set()
+  // 添加所有根节点（包括没有子节点的孤立节点）
   for (const id of rootNodes) {
-    if (nodeChildrenMap[id]?.length) all.add(id)
+    all.add(id)
   }
   // Also expand all non-root nodes that have children
   for (const id of Object.keys(nodeChildrenMap)) {
@@ -1136,6 +1369,15 @@ watch(
   }
 )
 
+// ===== 搜索高亮：监听搜索框输入，在图谱画布上高亮匹配节点 =====
+watch(
+  () => uiStore.searchQuery,
+  () => {
+    if (!nodeSel) return
+    applySearchHighlight()
+  }
+)
+
 // Close context menu on escape
 function handleKeyDown(e) {
   if (e.key === 'Escape') {
@@ -1167,6 +1409,7 @@ onBeforeUnmount(() => {
     simulation = null
   }
   if (resizeObserver) resizeObserver.disconnect()
+  if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('click', closeContextMenuOnOutside)
@@ -1199,13 +1442,14 @@ function closeContextMenuOnOutside() {
   flex-shrink: 0;
   position: relative;
   z-index: 10;
+  flex-wrap: wrap;
 }
 .toolbar-section {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
-.toolbar-left { flex: 1; min-width: 0; }
+.toolbar-left { flex: 1; min-width: 0; flex-wrap: wrap; }
 
 .doc-select-wrap {
   display: flex;
@@ -1455,6 +1699,9 @@ function closeContextMenuOnOutside() {
   font-weight: 500;
 }
 .legend-item { display: flex; align-items: center; gap: 7px; }
+.legend-item--clickable { cursor: pointer; padding: 3px 6px; border-radius: 4px; transition: background 0.15s; }
+.legend-item--clickable:hover { background: var(--bg-3, rgba(0,0,0,0.06)); }
+.legend-item--active { background: var(--bg-3, rgba(0,0,0,0.1)); font-weight: 600; }
 .legend-color { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 .legend-label { color: var(--text-2); }
 .legend-size-demo { gap: 4px; }
