@@ -32,6 +32,20 @@
       </button>
     </div>
 
+    <!-- ===== Visibility toggles ===== -->
+    <div class="node-tree__toggles">
+      <label class="toggle-row" title="在图谱中显示灵感胶囊节点">
+        <input
+          type="checkbox"
+          :checked="uiStore.showIdeasInGraph"
+          @change="uiStore.setShowIdeasInGraph($event.target.checked)"
+        />
+        <span class="toggle-pill toggle-pill--idea"></span>
+        <span class="toggle-label">显示灵感</span>
+        <span class="toggle-count">{{ ideaNodes.length }}</span>
+      </label>
+    </div>
+
     <!-- ===== Body ===== -->
     <div class="node-tree__body" v-if="graphStore.nodes.length">
       <!-- Hierarchical tree: 文档 → 章节 → 实体 -->
@@ -132,7 +146,41 @@
         </transition>
       </div>
 
-      <!-- Non-document nodes (ideas, manual nodes, etc.) -->
+      <!-- Idea nodes -->
+      <div v-if="ideaNodes.length" class="node-group">
+        <div
+          class="group-header group-header--idea"
+          @click="toggleGroup('_idea')"
+        >
+          <svg
+            class="chevron"
+            :class="{ 'chevron--collapsed': collapsed['_idea'] }"
+            width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+          >
+            <polyline points="9 6 15 12 9 18"/>
+          </svg>
+          <span class="group-dot group-dot--pill" :style="{ background: '#f43f5e', boxShadow: '0 0 7px #f43f5e' }"></span>
+          <span class="group-label">灵感</span>
+          <span class="group-count">{{ ideaNodes.length }}</span>
+        </div>
+        <transition name="group-collapse">
+          <div v-show="!collapsed['_idea']" class="group-items">
+            <div
+              v-for="node in ideaNodes"
+              :key="node.id"
+              class="node-item node-item--idea"
+              :class="{ 'node-item--active': isSelected(node) }"
+              :style="{ '--node-color': node.color || '#f43f5e' }"
+              @click="selectNode(node)"
+            >
+              <span class="node-bar node-bar--pill" :style="{ background: node.color || '#f43f5e' }"></span>
+              <span class="node-name">{{ nodeLabel(node) }}</span>
+            </div>
+          </div>
+        </transition>
+      </div>
+
+      <!-- Non-document nodes (manual nodes, etc.) -->
       <div v-if="otherNodes.length" class="node-group">
         <div
           class="group-header group-header--other"
@@ -145,7 +193,7 @@
           >
             <polyline points="9 6 15 12 9 18"/>
           </svg>
-          <span class="group-dot" :style="{ background: '#f43f5e', boxShadow: '0 0 7px #f43f5e' }"></span>
+          <span class="group-dot" :style="{ background: '#14b8a6', boxShadow: '0 0 7px #14b8a6' }"></span>
           <span class="group-label">其他节点</span>
           <span class="group-count">{{ otherNodes.length }}</span>
         </div>
@@ -188,10 +236,11 @@
 
 <script setup>
 import { ref, computed, reactive } from 'vue'
-import { useGraphStore, useUiStore } from '../stores'
+import { useGraphStore, useUiStore, useIdeaStore } from '../stores'
 
 const graphStore = useGraphStore()
 const uiStore = useUiStore()
+const ideaStore = useIdeaStore()
 
 // ===== Type metadata =====
 const TYPE_COLORS = {
@@ -356,11 +405,21 @@ const tree = computed(() => {
   return result
 })
 
-// ===== Other nodes (ideas, manual, etc. that are not document/heading/entity) =====
+// ===== Idea nodes =====
+const ideaNodes = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  return graphStore.nodes.filter(n => {
+    if (n.type !== 'idea') return false
+    if (q && !nodeLabel(n).toLowerCase().includes(q)) return false
+    return true
+  })
+})
+
+// ===== Other nodes (manual, etc. that are not document/heading/entity/idea) =====
 const otherNodes = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return graphStore.nodes.filter(n => {
-    if (n.type === 'document' || n.type === 'heading' || n.type === 'entity') return false
+    if (n.type === 'document' || n.type === 'heading' || n.type === 'entity' || n.type === 'idea') return false
     if (q && !nodeLabel(n).toLowerCase().includes(q)) return false
     return true
   })
@@ -667,6 +726,80 @@ function selectNode(node) {
   color: var(--text-3);
 }
 .no-match p { font-size: 12px; margin-top: 8px; }
+
+/* ===== Visibility toggles ===== */
+.node-tree__toggles {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-2);
+  user-select: none;
+}
+.toggle-row input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-pill {
+  width: 28px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  position: relative;
+  transition: background 0.2s, border-color 0.2s;
+}
+.toggle-pill::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: transform 0.2s, background 0.2s;
+}
+.toggle-row input:checked + .toggle-pill {
+  background: #f43f5e22;
+  border-color: #f43f5e88;
+}
+.toggle-row input:checked + .toggle-pill::after {
+  transform: translateX(14px);
+  background: #f43f5e;
+}
+.toggle-pill--idea { background: #f43f5e15; border-color: #f43f5e55; }
+.toggle-label { flex: 1; }
+.toggle-count {
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--bg-input);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+/* Idea group styling */
+.group-header--idea .group-dot--pill {
+  border-radius: 4px;
+  width: 12px;
+  height: 6px;
+}
+.node-item--idea {
+  border-radius: 12px;
+  margin-right: 10px;
+  margin-left: 4px;
+}
+.node-bar--pill {
+  border-radius: 2px;
+  height: 10px;
+}
 
 /* empty */
 .node-tree-empty {

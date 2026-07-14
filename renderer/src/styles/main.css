@@ -186,6 +186,8 @@ label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 4p
 .btn--primary:hover { opacity: 0.9; }
 .btn--danger { color: var(--rose); border-color: var(--rose-dim); }
 .btn--danger:hover { background: var(--rose-dim); }
+.btn--secondary { color: var(--violet); border-color: var(--violet-dim); background: var(--violet-dim); }
+.btn--secondary:hover { border-color: var(--violet); }
 .btn--sm { padding: 4px 10px; font-size: 12px; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 

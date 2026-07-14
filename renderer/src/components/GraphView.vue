@@ -233,9 +233,39 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           编辑节点
         </div>
+        <div class="context-menu-item" @click="handleContextLinkIdea">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          关联到灵感
+        </div>
         <div class="context-menu-item context-menu-item--danger" @click="handleContextDelete">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           删除节点
+        </div>
+      </div>
+    </transition>
+
+    <!-- ===== Link Idea Dialog ===== -->
+    <transition name="fade">
+      <div v-if="linkIdeaDialog.show" class="edit-dialog-overlay" @click.self="linkIdeaDialog.show = false">
+        <div class="edit-dialog">
+          <div class="edit-dialog-header">
+            <h3>关联到灵感</h3>
+            <button class="edit-dialog-close" @click="linkIdeaDialog.show = false">&times;</button>
+          </div>
+          <div class="edit-dialog-body">
+            <p class="edit-dialog-desc">将节点「{{ linkIdeaDialog.nodeLabel }}」关联到以下灵感：</p>
+            <div class="edit-field">
+              <label>选择灵感</label>
+              <select v-model="linkIdeaDialog.selectedIdeaId">
+                <option value="">请选择</option>
+                <option v-for="idea in availableIdeas" :key="idea.id" :value="idea.id">{{ idea.content || idea.title || idea.id }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="edit-dialog-footer">
+            <button class="btn btn--sm" @click="linkIdeaDialog.show = false">取消</button>
+            <button class="btn btn--primary btn--sm" @click="confirmLinkIdea">确认关联</button>
+          </div>
         </div>
       </div>
     </transition>
@@ -247,9 +277,11 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { select } from 'd3-selection'
 import { zoom, zoomIdentity } from 'd3-zoom'
 import { drag } from 'd3-drag'
-import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from 'd3-force'
-import { useGraphStore, useDocsStore, useUiStore } from '../stores'
+import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, forceX, forceY } from 'd3-force'
+import { useGraphStore, useDocsStore, useUiStore, useIdeaStore } from '../stores'
 import { graphApi } from '../api/client'
+
+const ideaStore = useIdeaStore()
 
 const graphStore = useGraphStore()
 const docsStore = useDocsStore()
@@ -353,6 +385,16 @@ function nodeDisplayText(node) {
 }
 
 function nodeSize(node) {
+  // Idea 节点统一为胶囊形，尺寸固定且略大于普通节点，便于视觉区分
+  if (node.type === 'idea') {
+    const text = String(node.content || node.label || node.name || node.id || '')
+    const fontSize = 12
+    const textWidth = estimateTextWidth(text, fontSize)
+    const padding = 24
+    const width = Math.max(80, Math.min(NODE_MAX_WIDTH, textWidth + padding))
+    const height = 34
+    return { width, height, rx: height / 2 }
+  }
   const s = Number(node.specificity ?? node.weight ?? 0.5)
   const clamped = Math.max(0, Math.min(1, isNaN(s) ? 0.5 : s))
   const baseHeight = 28
@@ -368,11 +410,14 @@ function nodeSize(node) {
   return {
     width,
     height,
-    rx: node.type === 'idea' ? height / 2 : 4 // pill shape for ideas
+    rx: 4
   }
 }
 
 function nodeColor(node) {
+  if (node.type === 'idea') {
+    return node.color || '#f59e0b'
+  }
   const docId = getNodeDocId(node)
   return getDocColor(docId)
 }
@@ -431,6 +476,11 @@ function nodeLevelForId(id) {
   return n ? typeLevel(n.type) : 3
 }
 
+function isIdeaNode(id) {
+  const n = graphStore.nodes.find(x => x.id === id)
+  return n?.type === 'idea'
+}
+
 // ===== Expand / collapse state =====
 const expandedNodes = ref(new Set())
 let nodeChildrenMap = {}   // parentId → [childId, ...]
@@ -465,19 +515,21 @@ function computeHierarchy(nodes, edges) {
     }
   }
 
-  // Roots: level-0 nodes, or nodes with no parent
+  // Roots: level-0 nodes, idea nodes (always treated as independent roots), or nodes with no parent
   for (const n of nodes) {
-    if (nodeLevel[n.id] === 0 || !nodeParentMap[n.id]) {
+    if (nodeLevel[n.id] === 0 || n.type === 'idea' || !nodeParentMap[n.id]) {
       rootNodes.add(n.id)
     }
   }
 
   // Match the interactive collapse rules: document roots are always visible;
+  // idea roots are always visible by default (but can be hidden via left panel toggle);
   // non-document roots only appear after being explicitly expanded.
   visibleNodeIds = new Set()
   for (const rootId of rootNodes) {
     const isDocRoot = nodeLevel[rootId] === 0
-    if (expandedNodes.value.has(rootId) || isDocRoot) visibleNodeIds.add(rootId)
+    const isIdeaRoot = isIdeaNode(rootId)
+    if (expandedNodes.value.has(rootId) || isDocRoot || isIdeaRoot) visibleNodeIds.add(rootId)
     const queue = [rootId]
     while (queue.length) {
       const id = queue.shift()
@@ -542,7 +594,16 @@ const contextMenu = ref({
   node: null
 })
 
+// ===== Link idea dialog state =====
+const linkIdeaDialog = ref({
+  show: false,
+  nodeId: null,
+  nodeLabel: '',
+  selectedIdeaId: ''
+})
+
 const docs = computed(() => docsStore.documents)
+const availableIdeas = computed(() => ideaStore.ideas)
 
 // ===== SVG / zoom init =====
 function initSvg() {
@@ -592,8 +653,8 @@ function buildGraph() {
   // Compute hierarchy & visibility
   computeHierarchy(allNodes, graphStore.edges)
 
-  // Filter to visible nodes only
-  currentNodes.value = allNodes.filter(d => visibleNodeIds.has(d.id))
+  // Filter to visible nodes only (respect showIdeasInGraph toggle)
+  currentNodes.value = allNodes.filter(d => visibleNodeIds.has(d.id) && (d.type !== 'idea' || uiStore.showIdeasInGraph))
   const visibleIdSet = new Set(currentNodes.value.map(n => n.id))
   const nodeById = new Map(currentNodes.value.map(n => [n.id, n]))
   currentLinks.value = graphStore.edges
@@ -758,6 +819,9 @@ function buildGraph() {
     .force('charge', forceManyBody().strength(-300))
     .force('center', forceCenter(width / 2, height / 2))
     .force('collide', forceCollide().radius(d => Math.max(nodeSize(d).width, nodeSize(d).height) / 2 + 10).strength(0.9))
+    // 默认布局：idea 胶囊节点偏向右侧，其他文档类节点偏向左侧；用户可手动拖动混合
+    .force('idea-cluster-x', forceX(d => d.type === 'idea' ? width * 0.72 : width * 0.28).strength(d => d.type === 'idea' ? 0.08 : 0.04))
+    .force('idea-cluster-y', forceY(height / 2).strength(d => d.type === 'idea' ? 0.04 : 0.02))
     .alpha(0.5)
 
   simulation.on('tick', () => {
@@ -806,7 +870,7 @@ function updateGraphVisibility() {
     if (cached) { n.x = n.px = cached.x; n.y = n.py = cached.y }
   })
 
-  currentNodes.value = allNodes.filter(d => visibleNodeIds.has(d.id))
+  currentNodes.value = allNodes.filter(d => visibleNodeIds.has(d.id) && (d.type !== 'idea' || uiStore.showIdeasInGraph))
   const visibleIdSet = new Set(currentNodes.value.map(n => n.id))
   const nodeById = new Map(currentNodes.value.map(n => [n.id, n]))
   currentLinks.value = graphStore.edges
@@ -936,6 +1000,8 @@ function updateGraphVisibility() {
   simulation.force('link').links(currentLinks.value)
   simulation.force('center', forceCenter(width / 2, height / 2))
   simulation.force('collide', forceCollide().radius(d => Math.max(nodeSize(d).width, nodeSize(d).height) / 2 + 10).strength(0.9))
+  simulation.force('idea-cluster-x', forceX(d => d.type === 'idea' ? width * 0.72 : width * 0.28).strength(d => d.type === 'idea' ? 0.08 : 0.04))
+  simulation.force('idea-cluster-y', forceY(height / 2).strength(d => d.type === 'idea' ? 0.04 : 0.02))
   simulation.alpha(0.15).restart()
 
   // Rebuild expand/collapse badges
@@ -1236,6 +1302,35 @@ function handleContextEdit() {
   })
 }
 
+function handleContextLinkIdea() {
+  const node = contextMenu.value.node
+  if (!node) return
+  contextMenu.value.show = false
+  // 打开灵感关联弹窗
+  linkIdeaDialog.value = {
+    show: true,
+    nodeId: node.id,
+    nodeLabel: node.content || node.label || node.name || node.id,
+    selectedIdeaId: '',
+  }
+}
+
+async function confirmLinkIdea() {
+  const { nodeId, selectedIdeaId } = linkIdeaDialog.value
+  if (!selectedIdeaId) {
+    uiStore.toast('请选择一个灵感', 'error')
+    return
+  }
+  try {
+    await ideaStore.linkToNode(selectedIdeaId, nodeId)
+    await graphStore.loadGraph()
+    uiStore.toast('已关联到灵感', 'success')
+    linkIdeaDialog.value.show = false
+  } catch (e) {
+    uiStore.toast('关联失败: ' + (e.message || e), 'error')
+  }
+}
+
 function handleContextDelete() {
   const node = contextMenu.value.node
   if (!node) return
@@ -1300,6 +1395,8 @@ function handleResize() {
   const width = canvasRef.value.clientWidth || 900
   const height = canvasRef.value.clientHeight || 620
   simulation.force('center', forceCenter(width / 2, height / 2))
+  simulation.force('idea-cluster-x', forceX(d => d.type === 'idea' ? width * 0.72 : width * 0.28).strength(d => d.type === 'idea' ? 0.08 : 0.04))
+  simulation.force('idea-cluster-y', forceY(height / 2).strength(d => d.type === 'idea' ? 0.04 : 0.02))
   simulation.alpha(0.3).restart()
 }
 
@@ -1327,6 +1424,11 @@ function collapseAll() {
 watch(
   [() => graphStore.nodes, () => graphStore.edges],
   () => { nextTick(renderGraph) }
+)
+// 监听显隐开关：切换灵感显示时平滑更新图谱
+watch(
+  () => uiStore.showIdeasInGraph,
+  () => { nextTick(rebuildVisibility) }
 )
 // ===== Watch for external selection changes (e.g., from left panel) =====
 watch(

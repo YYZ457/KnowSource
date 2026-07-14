@@ -27,9 +27,17 @@ export const useUiStore = defineStore('ui', () => {
   const apiToken = ref('')
   const backendPort = ref('')
 
+  // 图谱中是否显示灵感（idea）节点
+  const showIdeasInGraph = ref(localStorage.getItem('ks-show-ideas') !== 'false')
+
   function setApiEnv(token, port) {
     apiToken.value = token || ''
     backendPort.value = port || ''
+  }
+
+  function setShowIdeasInGraph(show) {
+    showIdeasInGraph.value = !!show
+    localStorage.setItem('ks-show-ideas', showIdeasInGraph.value ? 'true' : 'false')
   }
 
   function openSourcePreview(docId, nodeLabel = null) {
@@ -89,7 +97,7 @@ export const useUiStore = defineStore('ui', () => {
   const graphCommand = ref(null) // { action: 'zoomIn' | 'zoomOut' | 'reset', ts: number }
   function sendGraphCommand(action) { graphCommand.value = { action, ts: Date.now() } }
 
-  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, sourcePreviewDocId, sourcePreviewNodeLabel, apiToken, backendPort, setApiEnv, setView, openSettings, closeSettings, toggleTheme, toast, dismissToast, showConfirm, closeConfirm, graphCommand, sendGraphCommand, openSourcePreview, closeSourcePreview }
+  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, sourcePreviewDocId, sourcePreviewNodeLabel, apiToken, backendPort, showIdeasInGraph, setApiEnv, setShowIdeasInGraph, setView, openSettings, closeSettings, toggleTheme, toast, dismissToast, showConfirm, closeConfirm, graphCommand, sendGraphCommand, openSourcePreview, closeSourcePreview }
 })
 
 // ===== Documents Store =====

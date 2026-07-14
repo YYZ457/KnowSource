@@ -89,6 +89,9 @@
             <button class="btn" :disabled="linking" @click="onLinkNode">
               {{ linking ? '关联中...' : '关联节点' }}
             </button>
+            <button class="btn btn--secondary" :disabled="autoLinking" @click="onAutoLink">
+              {{ autoLinking ? '自动关联中...' : '自动关联' }}
+            </button>
           </div>
           <div v-if="linkMsg" class="hint" :class="{ 'hint--err': linkErr, 'hint--ok': !linkErr }">{{ linkMsg }}</div>
         </template>
@@ -176,6 +179,7 @@ function onTagsBlur() {
 // ===== 操作 =====
 const saving = ref(false)
 const linking = ref(false)
+const autoLinking = ref(false)
 const linkMsg = ref('')
 const linkErr = ref(false)
 
@@ -266,6 +270,71 @@ async function onLinkNode() {
   } finally {
     linking.value = false
   }
+}
+
+// 自动关联：基于文本相似度，为当前灵感寻找最匹配的图谱节点并建立关联
+async function onAutoLink() {
+  const idea = ideaStore.selectedIdea
+  if (!idea) return
+  const candidates = graphStore.nodes.filter(n => n.type !== 'idea')
+  if (!candidates.length) {
+    linkErr.value = true
+    linkMsg.value = '当前图谱中没有可关联的节点。'
+    return
+  }
+  autoLinking.value = true
+  linkMsg.value = ''
+  linkErr.value = false
+  try {
+    const target = findBestMatchNode(idea, candidates)
+    if (!target) {
+      linkErr.value = true
+      linkMsg.value = '未找到合适的关联节点。'
+      return
+    }
+    await ideaApi.linkToNode(idea.id, target.id)
+    idea.nodeId = target.id
+    idea.nodeLabel = target.label || target.name || target.id
+    linkErr.value = false
+    linkMsg.value = `已自动关联到节点：${target.label || target.name || target.id}`
+    uiStore.toast('自动关联成功', 'success')
+  } catch (e) {
+    linkErr.value = true
+    linkMsg.value = '自动关联失败：' + e.message
+    uiStore.toast('自动关联失败：' + e.message, 'error')
+  } finally {
+    autoLinking.value = false
+  }
+}
+
+// 基于关键词重叠的简单相似度匹配
+function findBestMatchNode(idea, nodes) {
+  const ideaText = `${idea.title || ''} ${idea.content || ''} ${(idea.tags || []).join(' ')}`.toLowerCase()
+  const ideaTokens = tokenize(ideaText)
+  if (!ideaTokens.length) return null
+  let best = null
+  let bestScore = 0
+  for (const node of nodes) {
+    const nodeText = `${node.content || node.label || node.name || ''}`.toLowerCase()
+    const nodeTokens = new Set(tokenize(nodeText))
+    let common = 0
+    for (const t of ideaTokens) {
+      if (nodeTokens.has(t)) common++
+    }
+    const score = common / (ideaTokens.length + nodeTokens.size - common || 1)
+    if (score > bestScore) {
+      bestScore = score
+      best = node
+    }
+  }
+  return bestScore > 0.15 ? best : null
+}
+
+function tokenize(text) {
+  return text
+    .replace(/[^\u4e00-\u9fa5a-z0-9]/gi, ' ')
+    .split(/\s+/)
+    .filter(t => t.length >= 2)
 }
 </script>
 
