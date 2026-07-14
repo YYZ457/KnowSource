@@ -178,7 +178,8 @@ label { display: block; font-size: 12px; color: var(--text-secondary); margin-bo
 </style>
 </head>
 <body>
-<div class="app" id="app">
+<script type="text/x-template" id="app-template">
+
   <!-- Top Bar -->
   <div class="topbar">
     <div class="topbar__logo">
@@ -430,7 +431,9 @@ label { display: block; font-size: 12px; color: var(--text-secondary); margin-bo
       </div>
     </div>
   </div>
-</div>
+
+</script>
+<div class="app" id="app"></div>
 
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
@@ -681,7 +684,7 @@ const VENDOR_PRESETS = {
 const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
 createApp({
-  template: document.getElementById('app').innerHTML,
+  template: '#app-template',
   setup() {
     const activeView = ref('promptlab');
     
