@@ -39,10 +39,15 @@ const API_TOKEN = process.env.KNOWLEDGE_IDE_API_TOKEN || null;
  * - 优先读取请求头 X-Knowledge-IDE-Token
  * - GET /documents/:id/pdf 等浏览器直接加载的资源，允许通过 query token 携带
  */
-function checkApiToken(req) {
+function checkApiToken(req, parsedUrl) {
   if (!API_TOKEN) return true;
   const headerToken = req.headers['x-knowledge-ide-token'];
   if (headerToken === API_TOKEN) return true;
+  // iframe / webview 无法携带自定义请求头，允许通过 URL query 携带 token
+  if (parsedUrl) {
+    const queryToken = parsedUrl.searchParams.get('token');
+    if (queryToken === API_TOKEN) return true;
+  }
   return false;
 }
 
@@ -199,7 +204,7 @@ export async function handleHttpRequest(req, res) {
   }
 
   // Electron 生产环境：校验本地 API Token，阻止其他本地进程/网页访问后端
-  if (!checkApiToken(req)) {
+  if (!checkApiToken(req, url)) {
     res.writeHead(403, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Forbidden: invalid or missing API token' }));
     return;
