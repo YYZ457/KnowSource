@@ -452,6 +452,27 @@ onMounted(async () => {
   document.documentElement.setAttribute('data-theme', uiStore.theme)
   uiStore.setView('documents')
 
+  // 后备机制：从 preload 获取 token，若为空则通过 IPC 获取，存入响应式 store
+  if (window.KSElectron) {
+    let token = window.KSElectron.env?.apiToken || ''
+    let port = window.KSElectron.env?.backendPort || ''
+    if (!token) {
+      try {
+        const result = await window.KSElectron.getToken()
+        if (result?.token) {
+          token = result.token
+          port = result.port
+          // 同步更新 window.KSElectron.env，让 api/client.js 的 getApiToken() 也能获取
+          window.KSElectron.env.apiToken = token
+          window.KSElectron.env.backendPort = port
+        }
+      } catch (e) {
+        console.error('[KSElectron] getToken fallback failed:', e)
+      }
+    }
+    uiStore.setApiEnv(token, port)
+  }
+
   // 注册菜单事件
   setupMenuListeners()
   window.addEventListener('keydown', onGlobalKeyDown)

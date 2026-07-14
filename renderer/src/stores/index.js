@@ -23,6 +23,15 @@ export const useUiStore = defineStore('ui', () => {
   const sourcePreviewDocId = ref(null)
   const sourcePreviewNodeLabel = ref(null)
 
+  // API token：从 preload 获取，若为空则通过 IPC 后备获取
+  const apiToken = ref('')
+  const backendPort = ref('')
+
+  function setApiEnv(token, port) {
+    apiToken.value = token || ''
+    backendPort.value = port || ''
+  }
+
   function openSourcePreview(docId, nodeLabel = null) {
     sourcePreviewDocId.value = docId
     sourcePreviewNodeLabel.value = nodeLabel
@@ -80,7 +89,7 @@ export const useUiStore = defineStore('ui', () => {
   const graphCommand = ref(null) // { action: 'zoomIn' | 'zoomOut' | 'reset', ts: number }
   function sendGraphCommand(action) { graphCommand.value = { action, ts: Date.now() } }
 
-  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, sourcePreviewDocId, sourcePreviewNodeLabel, setView, openSettings, closeSettings, toggleTheme, toast, dismissToast, showConfirm, closeConfirm, graphCommand, sendGraphCommand, openSourcePreview, closeSourcePreview }
+  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, sourcePreviewDocId, sourcePreviewNodeLabel, apiToken, backendPort, setApiEnv, setView, openSettings, closeSettings, toggleTheme, toast, dismissToast, showConfirm, closeConfirm, graphCommand, sendGraphCommand, openSourcePreview, closeSourcePreview }
 })
 
 // ===== Documents Store =====

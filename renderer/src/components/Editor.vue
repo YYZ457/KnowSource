@@ -205,12 +205,14 @@ const pdfUrl = computed(() => {
   const docId = doc.id || doc.docId
   if (!docId) return ''
 
-  // Electron 模式
+  // Electron 模式：优先从响应式 store 获取 token，回退到 window.KSElectron
   const isElectron = typeof window !== 'undefined' && window.KSElectron
-  if (isElectron && window.KSElectron?.env?.backendPort) {
-    const port = window.KSElectron.env.backendPort
-    const token = window.KSElectron.env.apiToken || ''
-    return `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
+  if (isElectron) {
+    const port = uiStore.backendPort || window.KSElectron?.env?.backendPort || ''
+    const token = uiStore.apiToken || window.KSElectron?.env?.apiToken || ''
+    if (port) {
+      return `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
+    }
   }
   // Web 模式 — Vite 代理 /api -> 后端
   return `/api/documents/${encodeURIComponent(docId)}/pdf`
@@ -227,10 +229,14 @@ async function checkPdfAccessible(docId) {
   try {
     const isElectron = typeof window !== 'undefined' && window.KSElectron
     let checkUrl
-    if (isElectron && window.KSElectron?.env?.backendPort) {
-      const port = window.KSElectron.env.backendPort
-      const token = window.KSElectron.env.apiToken || ''
-      checkUrl = `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
+    if (isElectron) {
+      const port = uiStore.backendPort || window.KSElectron?.env?.backendPort || ''
+      const token = uiStore.apiToken || window.KSElectron?.env?.apiToken || ''
+      if (port) {
+        checkUrl = `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
+      } else {
+        checkUrl = `/api/documents/${encodeURIComponent(docId)}/pdf`
+      }
     } else {
       checkUrl = `/api/documents/${encodeURIComponent(docId)}/pdf`
     }

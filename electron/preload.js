@@ -4,6 +4,13 @@
 // ============================================================
 const { contextBridge, ipcRenderer } = require('electron');
 
+// sandbox 模式下 process.env 不包含主进程运行时设置的变量，
+// 通过 additionalArguments (process.argv) 获取 token 和 port
+const ksTokenArg = process.argv.find(a => typeof a === 'string' && a.startsWith('--ks-token='));
+const ksPortArg = process.argv.find(a => typeof a === 'string' && a.startsWith('--ks-port='));
+const ksToken = ksTokenArg ? ksTokenArg.split('=')[1] : '';
+const ksPort = ksPortArg ? ksPortArg.split('=')[1] : (process.env.PORT || '8000');
+
 contextBridge.exposeInMainWorld('KSElectron', {
   // ============ 文件操作 ============
   openFileDialog: (options) => ipcRenderer.invoke('dialog:openFile', options),
@@ -13,9 +20,10 @@ contextBridge.exposeInMainWorld('KSElectron', {
 
   // ============ 环境信息 ============
   getEnvInfo: () => ipcRenderer.invoke('env:info'),
+  getToken: () => ipcRenderer.invoke('env:token'),
   env: {
-    backendPort: process.env.PORT || 8000,
-    apiToken: process.env.KNOWLEDGE_IDE_API_TOKEN || ''
+    backendPort: ksPort,
+    apiToken: ksToken
   },
 
   // ============ 系统安全存储（模型配置 / API Key） ============

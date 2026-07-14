@@ -114,10 +114,12 @@ const pdfUrl = computed(() => {
   const id = d.id || d.docId
   if (!id) return ''
   const isElectron = typeof window !== 'undefined' && window.KSElectron
-  if (isElectron && window.KSElectron?.env?.backendPort) {
-    const port = window.KSElectron.env.backendPort
-    const token = window.KSElectron.env.apiToken || ''
-    return `http://127.0.0.1:${port}/documents/${encodeURIComponent(id)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
+  if (isElectron) {
+    const port = uiStore.backendPort || window.KSElectron?.env?.backendPort || ''
+    const token = uiStore.apiToken || window.KSElectron?.env?.apiToken || ''
+    if (port) {
+      return `http://127.0.0.1:${port}/documents/${encodeURIComponent(id)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
+    }
   }
   return `/api/documents/${encodeURIComponent(id)}/pdf`
 })
