@@ -1,7 +1,7 @@
 <!--
   SourcePreview.vue — 知源 KnowSource 源文件预览面板
   功能：在图谱视图中双击节点时，在左侧丝滑展开源文件内容的区域浏览框
-  PDF文档使用 webview 完整渲染，非PDF文档使用文本展示
+  PDF / DOCX 文档使用 webview 完整渲染，其他文档使用文本展示
 -->
 <template>
   <div class="source-preview">
@@ -28,30 +28,51 @@
     <!-- Content -->
     <div class="source-preview__body">
       <!-- PDF 完整渲染 -->
-      <div v-if="pdfUrl && !pdfLoadFailed" class="source-preview__pdf">
-          <div v-if="pdfLoading" class="source-preview__pdf-loading">
-            <span class="spinner"></span>
-            <span>正在加载 PDF...</span>
-          </div>
-          <!-- 使用 webview 替代 iframe：Chromium 在 file:// 协议下对跨域 iframe 加载本地 PDF 有安全限制，
-               webview 通过独立 partition 渲染 PDF，并在主进程中放行 persist:pdfviewer partition。 -->
-          <webview
-            v-if="pdfUrl && !pdfLoadFailed"
-            :src="pdfUrl"
-            class="source-preview__iframe"
-            partition="persist:pdfviewer"
-            :webpreferences="'contextIsolation=yes,nodeIntegration=no,sandbox=yes'"
-            @dom-ready="onPdfLoad"
-            @did-fail-load="onPdfError"
-          ></webview>
-          <div v-if="pdfLoadFailed" class="source-preview__pdf-fallback">
-            <p>PDF 加载失败</p>
-            <button class="btn btn--sm" @click="retryPdf">重试</button>
-          </div>
+      <div v-if="isPdf && pdfUrl && !pdfLoadFailed" class="source-preview__doc">
+        <div v-if="pdfLoading" class="source-preview__doc-loading">
+          <span class="spinner"></span>
+          <span>正在加载 PDF...</span>
         </div>
+        <!-- 使用 webview 替代 iframe：Chromium 在 file:// 协议下对跨域 iframe 加载本地 PDF 有安全限制，
+             webview 通过独立 partition 渲染 PDF，并在主进程中放行 persist:pdfviewer partition。 -->
+        <webview
+          :key="`sp-pdf-${pdfRetryKey}-${pdfUrl}`"
+          :src="pdfUrl"
+          class="source-preview__iframe"
+          partition="persist:pdfviewer"
+          :webpreferences="'contextIsolation=yes,nodeIntegration=no,sandbox=yes'"
+          @dom-ready="onPdfLoad"
+          @did-fail-load="onPdfError"
+        ></webview>
+        <div v-if="pdfLoadFailed" class="source-preview__doc-fallback">
+          <p>PDF 加载失败</p>
+          <button class="btn btn--sm" @click="retryPdf">重试</button>
+        </div>
+      </div>
 
-      <!-- 非 PDF 文档：文本展示 -->
-      <template v-else-if="!isPdf">
+      <!-- DOCX 完整渲染 -->
+      <div v-else-if="isDocx && docxHtmlUrl && !docxLoadFailed" class="source-preview__doc">
+        <div v-if="docxLoading" class="source-preview__doc-loading">
+          <span class="spinner"></span>
+          <span>正在加载 Word 文档...</span>
+        </div>
+        <webview
+          :key="`sp-docx-${docxRetryKey}-${docxHtmlUrl}`"
+          :src="docxHtmlUrl"
+          class="source-preview__iframe"
+          partition="persist:docxviewer"
+          :webpreferences="'contextIsolation=yes,nodeIntegration=no,sandbox=yes'"
+          @dom-ready="onDocxLoad"
+          @did-fail-load="onDocxError"
+        ></webview>
+        <div v-if="docxLoadFailed" class="source-preview__doc-fallback">
+          <p>Word 文档加载失败</p>
+          <button class="btn btn--sm" @click="retryDocx">重试</button>
+        </div>
+      </div>
+
+      <!-- 其他文档：文本展示 -->
+      <template v-else-if="!isPdf && !isDocx">
         <div v-if="!sections.length" class="source-preview__empty">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
           <span>暂无内容</span>
@@ -70,7 +91,7 @@
         </template>
       </template>
 
-      <!-- PDF 无 URL 回退 -->
+      <!-- 文档无 URL 回退 -->
       <div v-else class="source-preview__empty">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
         <span>文档不可用</span>
@@ -109,38 +130,58 @@ const isPdf = computed(() => {
   return name.endsWith('.pdf') || d.type === 'pdf'
 })
 
-// 构建 PDF URL（与 Editor.vue 逻辑一致）
-const pdfUrl = computed(() => {
+const isDocx = computed(() => {
   const d = doc.value
-  if (!d) return ''
-  const id = d.id || d.docId
+  if (!d) return false
+  const name = (d.name || d.filename || d.title || '').toLowerCase()
+  return name.endsWith('.docx') || d.type === 'docx'
+})
+
+function getDocId(d) {
+  return d?.id || d?.docId || ''
+}
+
+function buildElectronUrl(docId, path) {
+  const port = uiStore.backendPort || window.KSElectron?.env?.backendPort || ''
+  const token = uiStore.apiToken || window.KSElectron?.env?.apiToken || ''
+  if (port) {
+    return `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/${path}${token ? '?token=' + encodeURIComponent(token) : ''}`
+  }
+  return `/api/documents/${encodeURIComponent(docId)}/${path}`
+}
+
+// 构建 PDF URL
+const pdfUrl = computed(() => {
+  const id = getDocId(doc.value)
   if (!id) return ''
   const isElectron = typeof window !== 'undefined' && window.KSElectron
-  if (isElectron) {
-    const port = uiStore.backendPort || window.KSElectron?.env?.backendPort || ''
-    const token = uiStore.apiToken || window.KSElectron?.env?.apiToken || ''
-    if (port) {
-      return `http://127.0.0.1:${port}/documents/${encodeURIComponent(id)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
-    }
-  }
+  if (isElectron) return buildElectronUrl(id, 'pdf')
   return `/api/documents/${encodeURIComponent(id)}/pdf`
+})
+
+// 构建 DOCX HTML URL
+const docxHtmlUrl = computed(() => {
+  const id = getDocId(doc.value)
+  if (!id) return ''
+  const isElectron = typeof window !== 'undefined' && window.KSElectron
+  if (isElectron) return buildElectronUrl(id, 'html')
+  return `/api/documents/${encodeURIComponent(id)}/html`
 })
 
 // PDF 加载状态
 const pdfLoading = ref(false)
 const pdfLoadFailed = ref(false)
 const pdfRetryKey = ref(0)
-
 let pdfLoadTimeoutId = null
 
 function onPdfLoad() {
   pdfLoading.value = false
+  pdfLoadFailed.value = false
   if (pdfLoadTimeoutId) {
     clearTimeout(pdfLoadTimeoutId)
     pdfLoadTimeoutId = null
   }
 }
-
 function onPdfError() {
   pdfLoading.value = false
   pdfLoadFailed.value = true
@@ -149,13 +190,11 @@ function onPdfError() {
     pdfLoadTimeoutId = null
   }
 }
-
 function retryPdf() {
   pdfLoadFailed.value = false
   pdfRetryKey.value++
   startPdfLoad()
 }
-
 function startPdfLoad() {
   if (!isPdf.value || !pdfUrl.value) return
   pdfLoading.value = true
@@ -169,14 +208,53 @@ function startPdfLoad() {
   }, 15000)
 }
 
-// 文档变化时启动加载
-watch([docId, pdfRetryKey], () => {
-  if (isPdf.value && pdfUrl.value) {
-    startPdfLoad()
+// DOCX 加载状态
+const docxLoading = ref(false)
+const docxLoadFailed = ref(false)
+const docxRetryKey = ref(0)
+let docxLoadTimeoutId = null
+
+function onDocxLoad() {
+  docxLoading.value = false
+  docxLoadFailed.value = false
+  if (docxLoadTimeoutId) {
+    clearTimeout(docxLoadTimeoutId)
+    docxLoadTimeoutId = null
   }
+}
+function onDocxError() {
+  docxLoading.value = false
+  docxLoadFailed.value = true
+  if (docxLoadTimeoutId) {
+    clearTimeout(docxLoadTimeoutId)
+    docxLoadTimeoutId = null
+  }
+}
+function retryDocx() {
+  docxLoadFailed.value = false
+  docxRetryKey.value++
+  startDocxLoad()
+}
+function startDocxLoad() {
+  if (!isDocx.value || !docxHtmlUrl.value) return
+  docxLoading.value = true
+  docxLoadFailed.value = false
+  if (docxLoadTimeoutId) clearTimeout(docxLoadTimeoutId)
+  docxLoadTimeoutId = setTimeout(() => {
+    if (docxLoading.value) {
+      docxLoading.value = false
+      docxLoadFailed.value = true
+    }
+  }, 15000)
+}
+
+// 文档变化时启动加载
+watch(docId, () => {
+  if (isPdf.value && pdfUrl.value) startPdfLoad()
+  else if (isDocx.value && docxHtmlUrl.value) startDocxLoad()
 }, { immediate: true })
 
-// ===== 非 PDF 文档的文本展示逻辑 =====
+// ===== 文本展示逻辑 =====
 const rawText = computed(() => {
   const d = doc.value
   if (!d) return ''
@@ -267,7 +345,7 @@ function close() {
   uiStore.closeSourcePreview()
 }
 
-// Auto-scroll to first highlighted section (非PDF文档)
+// Auto-scroll to first highlighted section
 watch(firstHighlightIndex, (idx) => {
   if (idx >= 0) {
     nextTick(() => {
@@ -375,8 +453,8 @@ watch(firstHighlightIndex, (idx) => {
   background: #ffffff;
 }
 
-/* ===== PDF iframe 渲染 ===== */
-.source-preview__pdf {
+/* ===== PDF / DOCX webview 渲染 ===== */
+.source-preview__doc {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -392,7 +470,7 @@ watch(firstHighlightIndex, (idx) => {
   min-height: 0;
 }
 
-.source-preview__pdf-loading {
+.source-preview__doc-loading {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -405,7 +483,7 @@ watch(firstHighlightIndex, (idx) => {
   z-index: 1;
 }
 
-.source-preview__pdf-loading .spinner {
+.source-preview__doc-loading .spinner {
   width: 14px;
   height: 14px;
   border-width: 2px;
@@ -413,7 +491,7 @@ watch(firstHighlightIndex, (idx) => {
   border-top-color: #6b7280;
 }
 
-.source-preview__pdf-fallback {
+.source-preview__doc-fallback {
   display: flex;
   flex-direction: column;
   align-items: center;

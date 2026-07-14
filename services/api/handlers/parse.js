@@ -1071,3 +1071,81 @@ export function serveDocumentPdf({ id } = {}) {
   }
   return { buffer, name: doc.name || 'document.pdf' };
 }
+
+/**
+ * 获取 DOCX 文档的 HTML 渲染内容。
+ * 解析时已通过 mammoth.convertToHtml 生成 rawHtml，直接返回；
+ * 若 rawHtml 缺失（旧数据），则尝试从原始二进制重新转换。
+ * @param {{id: string}} param
+ * @returns {{html: string, name: string}}
+ */
+export async function serveDocumentDocxHtml({ id } = {}) {
+  if (!id || !storage.documents.has(id)) {
+    throw new Error('文档不存在: ' + id);
+  }
+  const doc = storage.documents.get(id);
+  if (doc.type !== 'docx') {
+    throw new Error('文档不是 DOCX: ' + id);
+  }
+
+  let html = doc.rawHtml || '';
+
+  // 兼容旧数据：若 rawHtml 缺失，尝试从原始文件重新转换
+  if (!html.trim()) {
+    let buffer = null;
+    if (doc.filePath) {
+      buffer = readRawBuffer(id);
+    }
+    if (!buffer && doc.rawBase64) {
+      buffer = Buffer.from(doc.rawBase64, 'base64');
+    }
+    if (buffer && buffer.length > 0) {
+      const mammoth = await import('mammoth');
+      const result = await mammoth.convertToHtml({ buffer });
+      html = result.value || '';
+    }
+  }
+
+  if (!html.trim()) {
+    throw new Error('DOCX HTML 内容缺失: ' + id);
+  }
+
+  // 包装成完整 HTML 页面，注入基础样式，适配浅色主题和打印/阅读
+  const fullHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(doc.name || 'document.docx')}</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; color: #1f2937; font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+body { padding: 32px 40px; max-width: 100%; }
+p { line-height: 1.8; margin: 0.6em 0; }
+h1, h2, h3, h4, h5, h6 { margin: 1.2em 0 0.6em; color: #111827; }
+h1 { font-size: 1.8em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+h2 { font-size: 1.5em; }
+h3 { font-size: 1.25em; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+td, th { border: 1px solid #d1d5db; padding: 8px 12px; }
+th { background: #f3f4f6; }
+ul, ol { padding-left: 2em; }
+img { max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+${html}
+</body>
+</html>`;
+
+  return { html: fullHtml, name: doc.name || 'document.docx' };
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

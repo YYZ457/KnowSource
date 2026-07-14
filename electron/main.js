@@ -293,12 +293,13 @@ function createWindow() {
     callback({ responseHeaders: headers });
   });
 
-  // 默认阻止 webview 嵌入，仅允许用于 PDF 预览的独立 partition，并强制关闭危险能力
+  // 默认阻止 webview 嵌入，仅允许用于文档预览的独立 partition，并强制关闭危险能力
   // 注意：partition 属性位于 params 对象中，而非 webPreferences（Electron API 规范）。
   //       之前误用 webPreferences.partition（始终为 undefined）会导致所有 webview 被阻止，
-  //       PDF 预览功能完全失效。
+  //       PDF / DOCX 预览功能完全失效。
+  const allowedWebviewPartitions = ['persist:pdfviewer', 'persist:docxviewer'];
   mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
-    if (params.partition !== 'persist:pdfviewer') {
+    if (!allowedWebviewPartitions.includes(params.partition)) {
       event.preventDefault();
       return;
     }

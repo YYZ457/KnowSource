@@ -77,6 +77,7 @@
             <!-- 使用 webview 替代 iframe：Chromium 在 file:// 协议下对跨域 iframe 加载本地 PDF 有安全限制，
                  webview 通过独立 partition 渲染 PDF，并在主进程中放行 persist:pdfviewer partition。 -->
             <webview
+              :key="`pdf-${pdfRetryKey}-${pdfUrl}`"
               :src="pdfUrl"
               class="editor__pdf-iframe"
               partition="persist:pdfviewer"
@@ -95,6 +96,33 @@
             <button v-if="pdfLoadFailed" class="btn btn--sm btn--ghost" @click="retryPdfLoad">重试加载</button>
             <pre v-if="rawContent" class="editor__plain editor__plain--fallback">{{ rawContent }}</pre>
             <p v-else class="editor__empty--inline">该文档暂无提取文本</p>
+          </div>
+        </div>
+
+        <!-- DOCX 原始渲染 -->
+        <div
+          v-else-if="isDocx"
+          class="editor__pdf-viewer"
+        >
+          <div v-if="docxHtmlUrl && !docxLoadFailed" class="editor__pdf-iframe-wrapper">
+            <webview
+              :key="`docx-${docxRetryKey}-${docxHtmlUrl}`"
+              :src="docxHtmlUrl"
+              class="editor__pdf-iframe"
+              partition="persist:docxviewer"
+              :webpreferences="'contextIsolation=yes,nodeIntegration=no,sandbox=yes'"
+              @dom-ready="onDocxIframeLoad"
+              @did-fail-load="onDocxIframeError"
+            ></webview>
+            <div v-if="docxLoading" class="editor__pdf-loading">
+              <span class="spinner"></span>
+              <span>正在加载 Word 文档...</span>
+            </div>
+          </div>
+          <div v-else class="editor__pdf-fallback">
+            <p>{{ docxLoadFailed ? 'Word 文档加载失败' : 'Word 文档不可用' }}</p>
+            <button class="btn btn--sm" @click="switchToText">切换到文本视图</button>
+            <button v-if="docxLoadFailed" class="btn btn--sm btn--ghost" @click="retryDocxLoad">重试加载</button>
           </div>
         </div>
 
@@ -192,10 +220,15 @@ const rawContent = computed(() => {
 
 const hasContent = computed(() => rawContent.value.length > 0)
 
-// ===== PDF 视觉渲染 =====
+// ===== PDF / DOCX 视觉渲染 =====
 const isPdf = computed(() => {
   const ext = getExt(selectedDoc.value)
   return ext === 'pdf'
+})
+
+const isDocx = computed(() => {
+  const ext = getExt(selectedDoc.value)
+  return ext === 'docx'
 })
 
 // 构建 PDF 原始文件 URL
@@ -220,10 +253,50 @@ const pdfUrl = computed(() => {
   return `/api/documents/${encodeURIComponent(docId)}/pdf`
 })
 
+// 构建 DOCX HTML 渲染 URL（后端 mammoth 转换后返回完整 HTML）
+const docxHtmlUrl = computed(() => {
+  const doc = selectedDoc.value
+  if (!doc) return ''
+  const docId = doc.id || doc.docId
+  if (!docId) return ''
+
+  const isElectron = typeof window !== 'undefined' && window.KSElectron
+  if (isElectron) {
+    const port = uiStore.backendPort || window.KSElectron?.env?.backendPort || ''
+    const token = uiStore.apiToken || window.KSElectron?.env?.apiToken || ''
+    if (port) {
+      return `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/html${token ? '?token=' + encodeURIComponent(token) : ''}`
+    }
+  }
+  return `/api/documents/${encodeURIComponent(docId)}/html`
+})
+
 // PDF 加载失败处理
 const pdfLoadFailed = ref(false)
 const pdfLoading = ref(false)
 const pdfRetryKey = ref(0) // 用于触发重试
+
+// DOCX 加载失败处理
+const docxLoadFailed = ref(false)
+const docxLoading = ref(false)
+const docxRetryKey = ref(0)
+
+function onDocxIframeLoad() {
+  docxLoading.value = false
+  docxLoadFailed.value = false
+}
+function onDocxIframeError() {
+  docxLoading.value = false
+  docxLoadFailed.value = true
+}
+function retryDocxLoad() {
+  docxLoadFailed.value = false
+  docxLoading.value = true
+  docxRetryKey.value++
+}
+function switchToText() {
+  pdfViewMode.value = 'text'
+}
 
 // 预检 PDF 可达性，失败则回退到文本视图
 async function checkPdfAccessible(docId) {

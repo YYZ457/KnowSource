@@ -1,7 +1,7 @@
 /** @module services/api/router
  *  职责：API 路由网关，支持 HTTP 与 IPC 双通道
  */
-import { parseHandler, getDocuments, deleteDocument, serveDocumentPdf, pauseParse, resumeParse, cancelParse } from './handlers/parse.js';
+import { parseHandler, getDocuments, deleteDocument, serveDocumentPdf, serveDocumentDocxHtml, pauseParse, resumeParse, cancelParse } from './handlers/parse.js';
 import { importSampleDoc } from './handlers/sample-doc.js';
 import { reorderDocuments } from './handlers/documents.js';
 import { extractHandler, modelTestHandler } from './handlers/extract.js';
@@ -254,6 +254,34 @@ export async function handleHttpRequest(req, res) {
         'Content-Type': 'application/pdf',
         'Content-Length': buffer.length,
         'Content-Disposition': `inline; filename="${asciiName}"; filename*=UTF-8''${encodedName}`
+      });
+      res.end(buffer);
+    } catch (e) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // DOCX HTML 渲染返回（供前端 webview 完整渲染 Word 格式）
+  const docxHtmlMatch = method === 'GET' && path.match(/^\/documents\/([^/]+)\/html$/);
+  if (docxHtmlMatch) {
+    const queryToken = url.searchParams.get('token');
+    if (API_TOKEN && queryToken !== API_TOKEN && req.headers['x-knowledge-ide-token'] !== API_TOKEN) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Forbidden: invalid or missing API token' }));
+      return;
+    }
+    try {
+      const { html, name } = await serveDocumentDocxHtml({ id: decodeURIComponent(docxHtmlMatch[1]) });
+      const buffer = Buffer.from(html, 'utf-8');
+      const sanitized = name.replace(/[\x00-\x1F\x7F"\\]/g, '_');
+      const asciiName = sanitized.replace(/[^\x00-\x7F]/g, '_');
+      const encodedName = encodeURIComponent(sanitized).replace(/['()]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': buffer.length,
+        'Content-Disposition': `inline; filename="${asciiName}.html"; filename*=UTF-8''${encodedName}.html`
       });
       res.end(buffer);
     } catch (e) {
