@@ -39,7 +39,7 @@ body::before {
   background: radial-gradient(ellipse at 20% 10%, rgba(6,182,212,0.06) 0%, transparent 50%),
               radial-gradient(ellipse at 80% 80%, rgba(139,92,246,0.05) 0%, transparent 50%);
 }
-.app { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+#app, .app { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
 
 /* ===== Top Bar ===== */
 .topbar { display: flex; align-items: center; padding: 0 20px; height: 52px; background: var(--bg-deep); border-bottom: 1px solid var(--border-color); gap: 16px; flex-shrink: 0; }
@@ -681,6 +681,7 @@ const VENDOR_PRESETS = {
 const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
 
 createApp({
+  template: document.getElementById('app').innerHTML,
   setup() {
     const activeView = ref('promptlab');
     
