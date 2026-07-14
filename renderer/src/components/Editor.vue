@@ -74,14 +74,16 @@
           class="editor__pdf-viewer"
         >
           <div v-if="pdfUrl && !pdfLoadFailed" class="editor__pdf-iframe-wrapper">
-            <iframe
+            <!-- 使用 webview 替代 iframe：Chromium 在 file:// 协议下对跨域 iframe 加载本地 PDF 有安全限制，
+                 webview 通过独立 partition 渲染 PDF，并在主进程中放行 persist:pdfviewer partition。 -->
+            <webview
               :src="pdfUrl"
               class="editor__pdf-iframe"
-              frameborder="0"
-              allowfullscreen
-              @load="onPdfIframeLoad"
-              @error="onPdfIframeError"
-            ></iframe>
+              partition="persist:pdfviewer"
+              :webpreferences="'contextIsolation=yes,nodeIntegration=no,sandbox=yes'"
+              @dom-ready="onPdfIframeLoad"
+              @did-fail-load="onPdfIframeError"
+            ></webview>
             <div v-if="pdfLoading" class="editor__pdf-loading">
               <span class="spinner"></span>
               <span>正在加载 PDF...</span>

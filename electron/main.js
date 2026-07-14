@@ -262,7 +262,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      webviewTag: false,
+      webviewTag: true,
       // sandbox 模式下 process.env 无法读取主进程运行时设置的变量，
       // 通过 additionalArguments 将 token 和 port 传递给 preload 脚本
       additionalArguments: [

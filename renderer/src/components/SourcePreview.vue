@@ -1,7 +1,7 @@
 <!--
   SourcePreview.vue — 知源 KnowSource 源文件预览面板
   功能：在图谱视图中双击节点时，在左侧丝滑展开源文件内容的区域浏览框
-  PDF文档使用iframe完整渲染，非PDF文档使用文本展示
+  PDF文档使用 webview 完整渲染，非PDF文档使用文本展示
 -->
 <template>
   <div class="source-preview">
@@ -28,25 +28,27 @@
     <!-- Content -->
     <div class="source-preview__body">
       <!-- PDF 完整渲染 -->
-      <div v-if="isPdf && pdfUrl" class="source-preview__pdf">
-        <div v-if="pdfLoading" class="source-preview__pdf-loading">
-          <span class="spinner"></span>
-          <span>正在加载 PDF...</span>
+      <div v-if="pdfUrl && !pdfLoadFailed" class="source-preview__pdf">
+          <div v-if="pdfLoading" class="source-preview__pdf-loading">
+            <span class="spinner"></span>
+            <span>正在加载 PDF...</span>
+          </div>
+          <!-- 使用 webview 替代 iframe：Chromium 在 file:// 协议下对跨域 iframe 加载本地 PDF 有安全限制，
+               webview 通过独立 partition 渲染 PDF，并在主进程中放行 persist:pdfviewer partition。 -->
+          <webview
+            v-if="pdfUrl && !pdfLoadFailed"
+            :src="pdfUrl"
+            class="source-preview__iframe"
+            partition="persist:pdfviewer"
+            :webpreferences="'contextIsolation=yes,nodeIntegration=no,sandbox=yes'"
+            @dom-ready="onPdfLoad"
+            @did-fail-load="onPdfError"
+          ></webview>
+          <div v-if="pdfLoadFailed" class="source-preview__pdf-fallback">
+            <p>PDF 加载失败</p>
+            <button class="btn btn--sm" @click="retryPdf">重试</button>
+          </div>
         </div>
-        <iframe
-          v-if="pdfUrl && !pdfLoadFailed"
-          :src="pdfUrl"
-          class="source-preview__iframe"
-          frameborder="0"
-          allowfullscreen
-          @load="onPdfLoad"
-          @error="onPdfError"
-        ></iframe>
-        <div v-if="pdfLoadFailed" class="source-preview__pdf-fallback">
-          <p>PDF 加载失败</p>
-          <button class="btn btn--sm" @click="retryPdf">重试</button>
-        </div>
-      </div>
 
       <!-- 非 PDF 文档：文本展示 -->
       <template v-else-if="!isPdf">
