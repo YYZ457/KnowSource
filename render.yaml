@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     region: singapore
-    buildCommand: npm install --include=dev && npm run build:web
+    buildCommand: npm install --include=dev --include=optional --package-lock=false && npm run build:web
     startCommand: node services/web-server.js
     healthCheckPath: /healthz
     autoDeploy: false
