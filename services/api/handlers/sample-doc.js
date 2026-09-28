@@ -7,10 +7,12 @@ import path from 'path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'url';
 import { parseHandler } from './parse.js';
-import { storage } from '../../storage.js';
+import { storage, getCurrentProjectId } from '../../storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+// Share an in-flight parse across duplicate requests in the same project.
+const pendingSampleImports = new Map();
 
 /** 内置示例文档列表 — 3篇经典中文综述论文，体现跨文档知识网络 */
 const SAMPLE_DOCS = [
@@ -88,21 +90,31 @@ export async function importSampleDoc({ name } = {}) {
       continue;
     }
 
-    // 读取文件并 base64 编码
-    const buffer = fs.readFileSync(filePath);
-    const base64 = buffer.toString('base64');
+    const importKey = JSON.stringify([getCurrentProjectId(), target.name]);
+    let pending = pendingSampleImports.get(importKey);
+    const joinedExistingImport = Boolean(pending);
+    if (!pending) {
+      // Register before awaiting so a second request cannot parse the same PDF.
+      const buffer = fs.readFileSync(filePath);
+      pending = parseHandler({
+        name: target.name,
+        content: buffer.toString('base64'),
+        type: target.type
+      });
+      pendingSampleImports.set(importKey, pending);
+    }
 
     // 调用 parseHandler 解析文档
     try {
-      const result = await parseHandler({
-        name: target.name,
-        content: base64,
-        type: target.type
-      });
-      results.push({ success: true, name: target.name, doc: result });
+      const result = await pending;
+      results.push(joinedExistingImport
+        ? { success: true, name: target.name, skipped: true }
+        : { success: true, name: target.name, doc: result });
     } catch (e) {
       console.error(`[sample-doc] 导入失败 ${target.name}:`, e.message);
       results.push({ success: false, name: target.name, error: e.message });
+    } finally {
+      if (!joinedExistingImport && pendingSampleImports.get(importKey) === pending) pendingSampleImports.delete(importKey);
     }
   }
 
