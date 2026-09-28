@@ -6,13 +6,28 @@ import { KnowledgeGraph, mergeConcepts } from '../../../core/graph/index.js';
 import { buildCrossLinks, buildCrossLinksLLM } from '../../../core/graph/crosslink.js';
 import { validateExtractedNodesAndEdges } from '../../../core/graph/llm-extractor.js';
 import { storage, setGraph, getCurrentProjectId } from '../../storage.js';
-import { getKGProvider } from '../../llm-provider.js';
+import { getKGProvider, createLLMProvider } from '../../llm-provider.js';
 import { syncAllIdeasToGraph } from './idea.js';
 
 // 模块级构建锁：确保同一时刻只有一个图谱构建/重建任务在运行。
 // 与 storage.building 不同，此变量在 finally 中无条件重置，
 // 避免项目切换后 storage.building 未被重置导致后续构建被永久阻塞。
 let buildInProgress = false;
+
+function chooseProvider(mode) {
+  if (mode && !['offline', 'ai'].includes(mode)) throw new Error('未知图谱模式，请选择离线或 AI 辅助。');
+  const provider = mode === 'offline' ? createLLMProvider('stub') : getKGProvider();
+  if (mode === 'ai' && (!provider || provider.name === 'stub' || !provider.model)) throw new Error('AI 辅助需要先在设置中配置真实的图谱 KG 模型。');
+  const activity = { calls: 0, completed: 0, failures: 0 };
+  if (!provider || provider.name === 'stub') return { provider, activity };
+  const tracked = Object.create(provider);
+  tracked.complete = async (...args) => {
+    activity.calls++;
+    try { const result = await provider.complete(...args); activity.completed++; return result; }
+    catch (error) { activity.failures++; throw error; }
+  };
+  return { provider: tracked, activity };
+}
 
 /**
  * 快照当前图中的 cross-link 边 key 集合
@@ -82,6 +97,10 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
   // 记录构建开始时的项目 ID，构建过程中若项目被切换/删除则丢弃结果
   const startProjectId = getCurrentProjectId();
   const opts = options || {};
+  let selection;
+  try { selection = chooseProvider(opts.mode); } catch (error) { return { success: false, error: error.message }; }
+  const kgProvider = selection.provider;
+  const warnings = [];
   const taskId = 'graph-build-' + Date.now();
   storage.resetTaskProgress(taskId);
   // 标记图谱正在构建中，阻止 CRUD handler 并发修改导致数据丢失
@@ -140,9 +159,9 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
   });
 
   // 运行管线 — 传入真实 onProgress 回调，更新共享存储
-  const kgProvider = getKGProvider();
   const result = await runPipeline(docs, {
     onProgress: (p) => {
+      if (typeof p.log === 'string' && /失败|回退|简化图谱/.test(p.log)) warnings.push(p.log.slice(0, 500));
       storage.setTaskProgress({
         stage: p.stage || 'buildGraph',
         percent: Math.min(95, Math.max(5, p.percent || 0)),
@@ -155,6 +174,12 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
     extractOptions: opts.extractOptions || { maxTerms: 80 },
     minSeedTerms: opts.minSeedTerms
   });
+
+  // Existing extraction helpers may recover with rules. Explicit AI mode must not
+  // report an entirely failed model connection as an AI success.
+  if (opts.mode === 'ai' && selection.activity.completed === 0) {
+    throw new Error(selection.activity.calls ? '图谱 AI 调用全部失败，请检查 KG 模型连接；现有图谱未替换。' : '本次没有执行 AI 抽取，请检查图谱提示词任务是否被禁用；现有图谱未替换。');
+  }
 
   // 收集 pipeline 中已发生的跨文档关联错误
   const crossLinkErrors = Array.isArray(result.crossLinkErrors) ? [...result.crossLinkErrors] : [];
@@ -270,7 +295,7 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
     for (const edge of storage.graph.edges) finalGraph.addEdge(edge);
 
     // 优先使用 LLM 做语义跨文档关联，无可用模型时回退到规则相似度
-    const provider = getKGProvider();
+    const provider = kgProvider;
     const threshold = opts.crossLinkThreshold || 0.25;
     const baseOptions = {
       threshold,
@@ -329,6 +354,7 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
   syncAllIdeasToGraph();
 
   storage.setTaskProgress({
+    status: 'completed',
     stage: 'done',
     percent: 100,
     log: isIncremental
@@ -336,11 +362,19 @@ export async function graphBuildHandler({ documents, docIds, options } = {}) {
       : `构建完成：${storage.graph.nodes.length} 节点，${storage.graph.edges.length} 边`
   });
 
+  if (selection.activity.failures) warnings.push(`有 ${selection.activity.failures} 次 AI 调用失败，部分抽取或关联可能已使用规则结果，请检查原文与图谱。`);
+  for (const item of crossLinkErrors) warnings.push(`${item.stage}: ${item.message}`);
+  if (opts.mode === 'ai') warnings.push('AI 辅助结果同时包含规则提取与补充关系；请核对关键概念和原文证据。');
+
   return {
+    success: true,
     nodes: storage.graph.nodes,
     edges: storage.graph.edges,
     stats: storage.graph.stats,
     provider: kgProvider?.config || { provider: 'stub', model: '' },
+    mode: kgProvider?.name === 'stub' ? 'offline' : 'ai',
+    modelActivity: selection.activity,
+    warnings: [...new Set(warnings)],
     crossLinkErrors: crossLinkErrors.length > 0 ? crossLinkErrors : undefined
   };
   } catch (buildErr) {
@@ -367,6 +401,8 @@ export async function rebuildCrossLinksHandler({ options } = {}) {
   // 记录构建开始时的项目 ID，构建过程中若项目被切换/删除则丢弃结果
   const startProjectId = getCurrentProjectId();
   const opts = options || {};
+  let selection;
+  try { selection = chooseProvider(opts.mode); } catch (error) { return { success: false, error: error.message }; }
   const taskId = 'crosslinks-rebuild-' + Date.now();
   storage.resetTaskProgress(taskId);
 
@@ -385,7 +421,7 @@ export async function rebuildCrossLinksHandler({ options } = {}) {
     for (const node of storage.graph.nodes) finalGraph.addNode(node);
     for (const edge of storage.graph.edges) finalGraph.addEdge(edge);
 
-    const provider = getKGProvider();
+    const provider = selection.provider;
     const threshold = opts.crossLinkThreshold || 0.25;
     const baseOptions = {
       threshold,
@@ -469,6 +505,7 @@ export async function rebuildCrossLinksHandler({ options } = {}) {
     syncAllIdeasToGraph();
 
     storage.setTaskProgress({
+      status: 'completed',
       stage: 'done',
       percent: 100,
       log: `跨文档关联重建完成：${totalLinkCount} 条 cross-link`
@@ -480,7 +517,9 @@ export async function rebuildCrossLinksHandler({ options } = {}) {
       edges: storage.graph.edges,
       stats: storage.graph.stats,
       crossLinks: totalLinkCount,
-      method: methodUsed
+      method: methodUsed,
+      mode: provider?.name === 'stub' ? 'offline' : 'ai',
+      warnings: methodUsed === 'llm+rule-fallback' ? ['AI 关联数量较少，本次补充了规则相似度关系。'] : []
     };
   } catch (e) {
     console.error('[rebuildCrossLinks] 失败:', e);

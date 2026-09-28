@@ -4,11 +4,12 @@
     <div class="graph-toolbar">
       <div class="toolbar-section toolbar-left">
         <div class="doc-select-wrap">
-          <label class="select-label">选择文档</label>
+          <label class="select-label"><input v-model="allDocuments" type="checkbox" :disabled="graphStore.building" /> 全部文献（{{ docs.length }}）</label>
           <select
             class="doc-select"
             v-model="selectedDocIds"
             multiple
+            :disabled="allDocuments || graphStore.building"
             :size="Math.min(4, Math.max(2, docs.length))"
           >
             <option v-for="doc in docs" :key="doc.id" :value="doc.id">
@@ -19,14 +20,14 @@
         <button
           class="btn btn--primary btn--build"
           @click="handleBuild"
-          :disabled="graphStore.building"
+          :disabled="graphStore.building || !buildDocumentCount"
           :aria-label="graphStore.building ? '正在构建图谱' : '构建知识图谱'"
         >
           <span v-if="graphStore.building" class="spinner"></span>
           <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
           </svg>
-          {{ graphStore.building ? '构建中...' : '构建图谱' }}
+          {{ graphStore.building ? '构建中...' : buildMode === 'ai' ? 'AI 辅助构建' : '离线构建' }}
         </button>
         <button class="btn btn--sm" @click="handleClear" :disabled="graphStore.building || !graphStore.nodes.length" aria-label="清空图谱">
           清空
@@ -74,6 +75,21 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <div class="build-plan">
+      <div class="build-mode" role="group" aria-label="图谱构建方式">
+        <button :class="{ active: buildMode === 'offline' }" :disabled="graphStore.building" @click="buildMode = 'offline'">离线规则</button>
+        <button :class="{ active: buildMode === 'ai' }" :disabled="graphStore.building" @click="buildMode = 'ai'">AI 辅助</button>
+      </div>
+      <span>{{ allDocuments ? '全部文献' : '手选文献' }} · {{ buildDocumentCount }} 篇</span>
+      <span v-if="buildMode === 'offline'">本次图谱构建不调用模型，使用标题、关键词和规则关联。</span>
+      <span v-else :class="{ 'model-missing': !kgConfigured }">{{ kgStatusLabel }} · 内容将交给该模型处理，可能消耗额度。</span>
+      <button class="btn btn--sm" @click="uiStore.openSettings('model')">图谱模型设置</button>
+    </div>
+    <div v-if="buildWarnings.length" class="build-warning" role="status">
+      <strong>构建提示</strong>
+      <ul><li v-for="warning in buildWarnings" :key="warning">{{ warning }}</li></ul>
     </div>
 
     <!-- ===== Build Progress ===== -->
@@ -238,11 +254,28 @@ import { zoom, zoomIdentity } from 'd3-zoom'
 import { drag } from 'd3-drag'
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from 'd3-force'
 import { useGraphStore, useDocsStore, useUiStore } from '../stores'
-import { graphApi } from '../api/client'
+import { graphApi, settingsApi } from '../api/client'
 
 const graphStore = useGraphStore()
 const docsStore = useDocsStore()
 const uiStore = useUiStore()
+const buildMode = ref('offline')
+const allDocuments = ref(true)
+const kgConfig = ref({ provider: 'stub', model: '' })
+const kgConfigError = ref('')
+const buildWarnings = ref([])
+const kgConfigured = computed(() => !!kgConfig.value.model && kgConfig.value.provider !== 'stub')
+const kgStatusLabel = computed(() => kgConfigError.value || (kgConfigured.value ? `KG：${kgConfig.value.vendor || kgConfig.value.provider} / ${kgConfig.value.model}` : '尚未配置图谱 KG 模型'))
+const buildDocumentCount = computed(() => allDocuments.value ? docsStore.documents.length : selectedDocIds.value.filter(id => docsStore.documents.some(d => d.id === id)).length)
+async function refreshKGConfig() {
+  try {
+    const config = await settingsApi.getKGConfig()
+    if (config?.success === false) throw new Error(config.error || '模型配置读取失败')
+    kgConfig.value = config || { provider: 'stub', model: '' }
+    kgConfigError.value = ''
+    return true
+  } catch (error) { kgConfigError.value = '无法读取当前 KG 配置，请重试'; return false }
+}
 
 // ===== Document color palette =====
 const DOC_COLORS = [
@@ -924,17 +957,29 @@ function resetZoom() {
 
 // ===== Build / clear handlers =====
 async function handleBuild() {
-  const docIds = selectedDocIds.value.length
-    ? [...selectedDocIds.value].filter(id => docsStore.documents.some(d => d.id === id))
-    : docsStore.documents.map(d => d.id)
+  const docIds = allDocuments.value
+    ? docsStore.documents.map(d => d.id)
+    : [...selectedDocIds.value].filter(id => docsStore.documents.some(d => d.id === id))
   if (!docIds.length) {
     uiStore.toast('没有可用文档，请先导入文档', 'error')
     return
   }
+  if (buildMode.value === 'ai') {
+    if (!(await refreshKGConfig()) || !kgConfigured.value) {
+      uiStore.toast('请先配置并连接图谱 KG 模型，再使用 AI 辅助构建。', 'error')
+      uiStore.openSettings('model')
+      return
+    }
+  }
   try {
+    buildWarnings.value = []
     expandedNodes.value = new Set() // Reset expand state for fresh build
     nodePositionMap = {} // Clear cached positions
-    await graphStore.build(docIds)
+    const result = await graphStore.build(docIds, { mode: buildMode.value })
+    if (result?.success === false) throw new Error(result.error || '图谱构建失败')
+    buildWarnings.value = (result?.warnings || []).map(String).slice(0, 8)
+    if (buildWarnings.value.length) uiStore.toast(buildWarnings.value[0], 'warning')
+    else uiStore.toast(`已完成 ${docIds.length} 篇文献的${buildMode.value === 'ai' ? ' AI 辅助' : '离线'}图谱构建`, 'success')
     await nextTick()
     renderGraph()
     // 修复：重建后重置缩放和平移状态，避免停留在旧视图位置
@@ -1085,6 +1130,8 @@ function collapseAll() {
 }
 
 // ===== Watchers =====
+watch(() => uiStore.settingsOpen, (open, previous) => { if (previous && !open) refreshKGConfig() })
+watch(() => docsStore.documents, () => { selectedDocIds.value = selectedDocIds.value.filter(id => docsStore.documents.some(d => d.id === id)) })
 watch(
   [() => graphStore.nodes, () => graphStore.edges],
   () => { nextTick(renderGraph) }
@@ -1146,6 +1193,7 @@ function handleKeyDown(e) {
 
 // ===== Lifecycle =====
 onMounted(() => {
+  refreshKGConfig()
   if (!docsStore.documents.length) docsStore.load()
   initSvg()
   if (graphStore.nodes.length) buildGraph()
@@ -1186,6 +1234,15 @@ function closeContextMenuOnOutside() {
   min-height: 0;
   background: var(--bg-deep);
 }
+.build-plan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-card); color: var(--text-2); font-size: 12px; flex-shrink: 0; }
+.build-mode { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 3px; }
+.build-mode button { border: 0; border-radius: 5px; background: transparent; color: var(--text-2); padding: 6px 10px; cursor: pointer; }
+.build-mode button.active { background: var(--accent); color: white; }
+.model-missing { color: var(--amber); }
+.build-warning { padding: 9px 16px; background: rgba(245,158,11,.09); color: var(--text-2); font-size: 12px; max-height: 115px; overflow: auto; flex-shrink: 0; }
+.build-warning ul { margin: 4px 0 0; padding-left: 18px; }
+.doc-select:disabled { opacity: .6; }
+@media (max-width: 850px) { .graph-toolbar { flex-wrap: wrap; } .toolbar-left { flex-wrap: wrap; } .build-plan { gap: 8px; } }
 
 /* ===== Toolbar ===== */
 .graph-toolbar {

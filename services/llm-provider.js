@@ -52,7 +52,7 @@ export function inferCapabilities(vendor, model) {
  * 重试策略：
  * - 指数退避：delay = baseDelay * 2^attempt（1s, 2s, 4s ...）
  * - 4xx（非 429）错误视为不可恢复，立即抛出（如 401 鉴权失败、400 参数错误）
- * - 429（限流）与 5xx（服务端错误）以及无 status 的网络错误（含超时 abort）会重试
+ * - 429（限流）与 5xx（服务端错误）以及无 status 的网络错误（含 TimeoutError）会重试；主动 AbortError 不重试
  * - 错误对象需携带 status 属性以便判断；调用方应在抛出错误时设置 err.status
  *
  * @param {() => Promise<any>} fn - 实际执行函数（每次重试都会重新调用，故应将
@@ -65,8 +65,10 @@ async function withRetry(fn, options = {}) {
   const baseDelay = options.baseDelay ?? 1000;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      options.signal?.throwIfAborted();
       return await fn();
     } catch (e) {
+      if (options.signal?.aborted || e.name === 'AbortError') throw e;
       // 已达最大重试次数，直接抛出
       if (attempt === maxRetries) throw e;
       // 不可恢复的错误（如响应格式异常）不重试
@@ -75,9 +77,26 @@ async function withRetry(fn, options = {}) {
       if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) throw e;
       // 指数退避等待后重试
       const delay = baseDelay * Math.pow(2, attempt);
-      await new Promise(r => setTimeout(r, delay));
+      await new Promise((resolve, reject) => {
+        const finish = () => { options.signal?.removeEventListener('abort', cancel); resolve(); };
+        const timer = setTimeout(finish, delay);
+        const cancel = () => { clearTimeout(timer); options.signal?.removeEventListener('abort', cancel); reject(options.signal.reason || new DOMException('已停止', 'AbortError')); };
+        options.signal?.addEventListener('abort', cancel, { once: true });
+        if (options.signal?.aborted) cancel();
+      });
     }
   }
+}
+
+// External cancellation stops immediately; timeout remains a retryable failure.
+function completionDeadline(options, fallback) {
+  const controller = new AbortController();
+  const timeout = options.timeoutMs || options.timeout || fallback;
+  const timer = setTimeout(() => controller.abort(new DOMException('模型响应超时', 'TimeoutError')), timeout);
+  const cancel = () => controller.abort(new DOMException('已停止模型请求', 'AbortError'));
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  if (options.signal?.aborted) cancel();
+  return { signal: controller.signal, cleanup() { clearTimeout(timer); options.signal?.removeEventListener('abort', cancel); } };
 }
 
 // Stub LLM（无网络时回退）
@@ -127,8 +146,7 @@ class OllamaLLMProvider {
     // 实际的 fetch 逻辑提取为内部方法，便于 withRetry 包装。
     // 每次重试都会重新创建 AbortController（旧的 controller 可能已被 abort）。
     const doFetch = async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const deadline = completionDeadline(options, timeoutMs);
       try {
         // 使用 /api/chat 端点（支持所有现代聊天模型，包括 qwen2.5、llama3 等）
         const messages = [];
@@ -157,7 +175,7 @@ class OllamaLLMProvider {
         const resp = await fetch(`${this.baseUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
+          signal: deadline.signal,
           body: JSON.stringify(body)
         });
         if (!resp.ok) {
@@ -168,12 +186,15 @@ class OllamaLLMProvider {
         }
         const data = await resp.json();
         return data.message?.content ?? data.response ?? '';
+      } catch (error) {
+        if (deadline.signal.aborted) throw deadline.signal.reason;
+        throw error;
       } finally {
-        clearTimeout(timer);
+        deadline.cleanup();
       }
     };
 
-    return withRetry(doFetch, { maxRetries, baseDelay: 1000 });
+    return withRetry(doFetch, { maxRetries, baseDelay: 1000, signal: options.signal });
   }
 
   async embed(text) {
@@ -222,8 +243,7 @@ class HuggingFaceLLMProvider {
     // 实际的 fetch 逻辑提取为内部方法，便于 withRetry 包装。
     // 每次重试都会重新创建 AbortController（旧的 controller 可能已被 abort）。
     const doFetch = async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const deadline = completionDeadline(options, timeoutMs);
       try {
         // HuggingFace 不支持 system role，将 system 前置拼接
         const inputs = options.system ? `${options.system}\n\n${prompt}` : prompt;
@@ -233,7 +253,7 @@ class HuggingFaceLLMProvider {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.apiKey}`
           },
-          signal: controller.signal,
+          signal: deadline.signal,
           body: JSON.stringify({
             inputs,
             parameters: {
@@ -255,12 +275,15 @@ class HuggingFaceLLMProvider {
           return data[0]?.generated_text || data[0]?.summary_text || JSON.stringify(data[0]);
         }
         return data.generated_text || data.summary_text || JSON.stringify(data);
+      } catch (error) {
+        if (deadline.signal.aborted) throw deadline.signal.reason;
+        throw error;
       } finally {
-        clearTimeout(timer);
+        deadline.cleanup();
       }
     };
 
-    return withRetry(doFetch, { maxRetries, baseDelay: 1000 });
+    return withRetry(doFetch, { maxRetries, baseDelay: 1000, signal: options.signal });
   }
 
   async embed(text) {
@@ -359,8 +382,7 @@ class OpenAICompatibleLLMProvider {
     // 实际的 fetch 逻辑提取为内部方法，便于 withRetry 包装。
     // 每次重试都会重新创建 AbortController（旧的 controller 可能已被 abort）。
     const doFetch = async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const deadline = completionDeadline(options, timeoutMs);
       try {
         // 构建 messages：支持 system message 通道（strong 模型显著受益）
         const messages = [];
@@ -389,7 +411,7 @@ class OpenAICompatibleLLMProvider {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.apiKey}`
           },
-          signal: controller.signal,
+          signal: deadline.signal,
           body: JSON.stringify(body)
         });
         if (!resp.ok) {
@@ -410,12 +432,15 @@ class OpenAICompatibleLLMProvider {
           throw err;
         }
         return content;
+      } catch (error) {
+        if (deadline.signal.aborted) throw deadline.signal.reason;
+        throw error;
       } finally {
-        clearTimeout(timer);
+        deadline.cleanup();
       }
     };
 
-    return withRetry(doFetch, { maxRetries, baseDelay: 1000 });
+    return withRetry(doFetch, { maxRetries, baseDelay: 1000, signal: options.signal });
   }
 
   async embed(text) {

@@ -26,6 +26,9 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2z"/></svg>
           灵感
         </button>
+        <button class="nav-btn" :class="{ 'nav-btn--active': uiStore.activeView === 'agent' }" @click="uiStore.setView('agent')">
+          <span aria-hidden="true">✦</span> Agent
+        </button>
       </nav>
 
       <!-- Search + Settings + Theme -->
@@ -49,8 +52,13 @@
     </header>
 
     <!-- ===== Main Content — 统一两栏布局 ===== -->
-    <main class="main-content">
-      <Splitpanes class="default-theme" @resize="onResize">
+    <div v-if="uiStore.activeView !== 'agent'" class="mobile-workspace-nav">
+      <button class="btn btn--sm" @click="uiStore.leftPanelVisible = !uiStore.leftPanelVisible">{{ uiStore.leftPanelVisible ? '查看内容 →' : '← 返回列表' }}</button>
+      <span>{{ uiStore.activeView === 'documents' ? '文献工作台' : uiStore.activeView === 'graph' ? '知识图谱' : '研究灵感' }}</span>
+    </div>
+    <main class="main-content" :class="{ 'mobile-show-list': uiStore.leftPanelVisible }">
+      <AgentPanel v-if="agentVisited" v-show="uiStore.activeView === 'agent'" @refresh="refreshWorkspace" />
+      <Splitpanes v-if="uiStore.activeView !== 'agent'" class="default-theme" @resize="onResize">
         <!-- Left Pane: 上下文侧边栏（随视图切换内容） -->
         <Pane :size="leftPaneSize" :min-size="15" :max-size="45">
           <div class="pane-content">
@@ -103,6 +111,7 @@ import 'splitpanes/dist/splitpanes.css'
 import { useUiStore, useDocsStore, useGraphStore, usePromptStore, useModelStore, useIdeaStore, useProjectStore } from './stores'
 import { searchApi } from './api/client'
 import FileExplorer from './components/FileExplorer.vue'
+import AgentPanel from './components/AgentPanel.vue'
 import Editor from './components/Editor.vue'
 import GraphView from './components/GraphView.vue'
 import GraphNodeTree from './components/GraphNodeTree.vue'
@@ -112,6 +121,8 @@ import SettingsOverlay from './components/SettingsOverlay.vue'
 import OnboardingTour from './components/OnboardingTour.vue'
 
 const uiStore = useUiStore()
+const agentVisited = ref(false)
+watch(() => uiStore.activeView, view => { if (view === 'agent') agentVisited.value = true }, { immediate: true })
 const hostedTrial = !!window.__KS_HOSTED_TRIAL__
 const onboardingRef = ref(null)
 const docsStore = useDocsStore()
@@ -124,6 +135,13 @@ const promptStore = usePromptStore()
 const modelStore = useModelStore()
 const ideaStore = useIdeaStore()
 const projectStore = useProjectStore()
+
+async function refreshWorkspace() {
+  await projectStore.load()
+  await Promise.allSettled([docsStore.load(), graphStore.loadGraph(), ideaStore.load(), modelStore.load()])
+  if (docsStore.selectedDocId && !docsStore.documents.some(d => d.id === docsStore.selectedDocId)) docsStore.selectDoc(null)
+  else if (docsStore.selectedDocId) docsStore.selectDoc(docsStore.selectedDocId)
+}
 
 const leftPaneSize = ref(28)
 

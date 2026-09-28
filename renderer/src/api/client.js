@@ -176,51 +176,22 @@ export const logsApi = {
   list: (limit = 50) => request('/settings/llm-log', { params: { limit } }),
 }
 
-// ===== LLM 连接测试（客户端直接调用 LLM API） =====
+// 所有模型请求均由实际执行任务的后端连接，避免浏览器跨域与部署位置误判。
 export async function testLLMConnection(config) {
-  if (window.__KS_HOSTED_TRIAL__) return request('/settings/connection-test', { method: 'POST', body: config, timeout: 70000 });
-  const { provider, model, apiKey, baseUrl } = config
-  if (!provider || provider === 'stub') {
-    return { success: true, response: '[Stub 模式] 无需测试连接，将使用离线模拟响应。' }
-  }
-  if (!baseUrl) throw new Error('缺少 API Base URL')
-  // 校验 URL 格式，确保包含协议
-  if (!/^https?:\/\//i.test(baseUrl)) {
-    throw new Error('Base URL 需以 http:// 或 https:// 开头')
-  }
-  const url = String(baseUrl).replace(/\/+$/, '') + '/chat/completions'
-  const headers = { 'Content-Type': 'application/json' }
-  if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-  // 设置 60 秒超时，防止 LLM 服务响应过慢导致 UI 永久卡死
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 60000)
-  let resp
-  try {
-    resp = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: '你好，请回复"连接成功"' }],
-        temperature: 0.1,
-        stream: false,
-      }),
-      signal: controller.signal
-    })
-  } catch (fetchErr) {
-    clearTimeout(timer)
-    if (fetchErr.name === 'AbortError') {
-      throw new Error('LLM 连接测试超时（60s），请检查网络或服务是否可用')
-    }
-    throw fetchErr
-  }
-  clearTimeout(timer)
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '')
-    throw new Error(`LLM 请求失败 ${resp.status}: ${text.slice(0, 300)}`)
-  }
-  const data = await resp.json()
-  return { success: true, response: data.choices?.[0]?.message?.content || JSON.stringify(data) }
+  return request('/settings/connection-test', { method: 'POST', body: config, timeout: 70000 })
 }
 
-export default { documentsApi, parseApi, graphApi, searchApi, settingsApi, ideaApi, projectsApi, logsApi, testLLMConnection }
+async function agentRequest(path, options) {
+  const data = await request(path, options)
+  if (data?.success === false || (data?.error && !data?.status)) throw new Error(data.error || data.message || 'Agent 请求失败')
+  return data
+}
+export const agentApi = {
+  skills: () => agentRequest('/agent/skills'),
+  run: (payload) => agentRequest('/agent/run', { method: 'POST', body: payload }),
+  status: (runId) => agentRequest('/agent/status', { params: { runId } }),
+  confirm: (runId, actionIds) => agentRequest('/agent/confirm', { method: 'POST', body: { runId, actionIds } }),
+  cancel: (runId) => agentRequest('/agent/cancel', { method: 'POST', body: { runId } }),
+}
+
+export default { documentsApi, parseApi, graphApi, searchApi, settingsApi, ideaApi, projectsApi, logsApi, agentApi, testLLMConnection }

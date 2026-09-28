@@ -6,6 +6,7 @@ import { mkdir, readFile, stat, readdir } from 'node:fs/promises';
 import { resolve, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
+import { VENDOR_PRESETS } from './llm-provider.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -19,6 +20,33 @@ const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 function json(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
+}
+// Cache effective credentials in gateway memory only; an empty edit means reuse,
+// and must not erase the key needed when the idle child process is recreated.
+function cacheModelConfig(entry, path, input) {
+  const normalize = raw => {
+    const c = { ...raw };
+    if (c.provider === 'openai' || VENDOR_PRESETS[c.provider]) {
+      c.vendor = c.provider;
+      c.provider = 'openai-compatible';
+    }
+    if (c.provider === 'openai-compatible') c.vendor ||= 'openai';
+    c.baseUrl = String(c.baseUrl || VENDOR_PRESETS[c.vendor]?.baseUrl || (c.provider === 'ollama' ? 'http://127.0.0.1:11434' : '')).trim().replace(/\/+$/, '').replace('localhost:11434', '127.0.0.1:11434');
+    c.apiKey = String(c.apiKey || '').trim();
+    if (/^[*•●]+$/.test(c.apiKey)) c.apiKey = '';
+    return c;
+  };
+  const config = normalize(input);
+  const current = entry.modelConfigs.get(path), llm = path === '/settings/kg' ? entry.modelConfigs.get('/settings/llm') : null;
+  const candidates = config.reuseLLMKey ? [llm, current] : [current, llm];
+  if (!config.apiKey) {
+    const previous = candidates.filter(Boolean).map(normalize).find(c => c.apiKey && c.provider === config.provider && (c.vendor || '') === (config.vendor || '') && c.baseUrl === config.baseUrl);
+    if (previous) config.apiKey = previous.apiKey;
+  }
+  delete config.reuseLLMKey;
+  delete config.hasApiKey;
+  entry.modelConfigs.delete(path);
+  entry.modelConfigs.set(path, config);
 }
 function sessionFor(req) {
   const id = /(?:^|;\s*)ks_trial=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
@@ -132,8 +160,7 @@ async function proxy(req, res, url, entry) {
         if (resultBytes > 64 * 1024) return;
         try {
           if (JSON.parse(Buffer.concat(result).toString('utf8')).success === true) {
-            entry.modelConfigs.delete(settingsPath);
-            entry.modelConfigs.set(settingsPath, savedConfig);
+            cacheModelConfig(entry, settingsPath, savedConfig);
           }
         } catch { /* Failed or malformed saves never replace a working config. */ }
       });
