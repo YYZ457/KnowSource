@@ -28,7 +28,8 @@ function sessionFor(req) {
 function createSession(res) {
   if (sessions.size >= maxSessions) return null;
   const id = randomBytes(32).toString('hex');
-  const entry = { id, token: randomBytes(32).toString('hex'), expires: Date.now() + lifetime, worker: null, starting: null, active: 0, lastUsed: Date.now(), port: null };
+  // Model credentials live only in this browser session's gateway memory.
+  const entry = { id, token: randomBytes(32).toString('hex'), expires: Date.now() + lifetime, worker: null, starting: null, active: 0, lastUsed: Date.now(), port: null, modelConfigs: new Map() };
   sessions.set(id, entry);
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `ks_trial=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${lifetime / 1000}${secure}`);
@@ -44,9 +45,36 @@ async function directoryBytes(folder) {
   }
   return size;
 }
+async function restoreModelConfigs(entry, port) {
+  // Replay in save order: both settings routes also update the embedding model.
+  for (const [path, config] of entry.modelConfigs) {
+    const body = Buffer.from(JSON.stringify(config));
+    await new Promise((resolveRestored, reject) => {
+      const request = http.request({ host: '127.0.0.1', port, method: 'POST', path, headers: { 'content-type': 'application/json', 'content-length': body.length, 'x-knowledge-ide-token': entry.token } }, response => {
+        const parts = []; let bytes = 0;
+        response.on('data', part => {
+          bytes += part.length;
+          if (bytes > 64 * 1024) request.destroy(new Error('模型配置恢复响应异常'));
+          else parts.push(part);
+        });
+        response.once('error', reject);
+        response.once('end', () => {
+          try {
+            if (response.statusCode !== 200 || JSON.parse(Buffer.concat(parts).toString('utf8')).success !== true) throw new Error('模型配置恢复失败，请重新保存模型设置。');
+            resolveRestored();
+          } catch { reject(new Error('模型配置恢复失败，请重新保存模型设置。')); }
+        });
+      });
+      const timeout = setTimeout(() => request.destroy(new Error('模型配置恢复超时')), 10000);
+      request.once('close', () => clearTimeout(timeout));
+      request.once('error', reject);
+      request.end(body);
+    });
+  }
+}
 async function startWorker(entry) {
-  if (entry.worker && entry.port) return;
   if (entry.starting) return entry.starting;
+  if (entry.worker && entry.port) return;
   const running = [...sessions.values()].filter(s => s.worker || s.starting);
   if (running.length >= maxWorkers) {
     throw new Error('试验服务器同时最多服务两个浏览器，请稍后再试。');
@@ -57,8 +85,13 @@ async function startWorker(entry) {
     const child = fork(resolve(root, 'services/server.js'), [], { cwd: root, env, execArgv: ['--max-old-space-size=160'], stdio: ['ignore', 'ignore', 'ignore', 'ipc'], windowsHide: true });
     entry.worker = child;
     const timer = setTimeout(() => { child.kill(); reject(new Error('独立研究空间启动超时，请稍后重试。')); }, 30000);
-    child.once('message', msg => {
-      if (msg?.type === 'ready' && Number.isInteger(msg.port)) { clearTimeout(timer); entry.port = msg.port; resolveReady(); }
+    child.once('message', async msg => {
+      if (msg?.type !== 'ready' || !Number.isInteger(msg.port)) return;
+      try {
+        await restoreModelConfigs(entry, msg.port);
+        if (entry.worker !== child || child.killed) throw new Error('研究空间已停止，请重试。');
+        clearTimeout(timer); entry.port = msg.port; resolveReady();
+      } catch (err) { clearTimeout(timer); child.kill(); reject(err); }
     });
     child.once('error', () => { clearTimeout(timer); reject(new Error('研究空间启动失败。')); });
     child.once('exit', () => { clearTimeout(timer); entry.worker = null; entry.port = null; reject(new Error('试验服务器资源不足，研究空间已停止。')); });
@@ -79,9 +112,32 @@ async function proxy(req, res, url, entry) {
     parts.push(part);
   }
   if (!['GET', 'HEAD'].includes(req.method) && !url.pathname.endsWith('/delete') && req.method !== 'DELETE' && await directoryBytes(trialRoot) > 128 * 1024 * 1024) return json(res, 507, { error: '免费试验存储已满，请导出备份后删除不需要的资料。' });
+  const body = Buffer.concat(parts);
+  const settingsPath = req.method === 'POST' && ['/api/settings/llm', '/api/settings/kg'].includes(url.pathname) ? url.pathname.slice(4) : null;
+  let savedConfig;
+  if (settingsPath) {
+    if (bytes > 64 * 1024) return json(res, 413, { error: '模型配置不能超过 64 KB。' });
+    try {
+      const parsed = JSON.parse(body.toString('utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) savedConfig = parsed;
+    } catch { /* The backend retains its normal invalid-JSON response. */ }
+  }
   await startWorker(entry);
   entry.lastUsed = Date.now(); entry.active++;
   const upstream = http.request({ host: '127.0.0.1', port: entry.port, method: req.method, path: url.pathname.slice(4) + url.search, headers: { 'content-type': req.headers['content-type'] || 'application/json', 'content-length': bytes, 'x-knowledge-ide-token': entry.token } }, response => {
+    if (settingsPath && savedConfig && response.statusCode === 200) {
+      const result = []; let resultBytes = 0;
+      response.on('data', part => { resultBytes += part.length; if (resultBytes <= 64 * 1024) result.push(part); });
+      response.once('end', () => {
+        if (resultBytes > 64 * 1024) return;
+        try {
+          if (JSON.parse(Buffer.concat(result).toString('utf8')).success === true) {
+            entry.modelConfigs.delete(settingsPath);
+            entry.modelConfigs.set(settingsPath, savedConfig);
+          }
+        } catch { /* Failed or malformed saves never replace a working config. */ }
+      });
+    }
     const headers = { ...response.headers, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
     delete headers['set-cookie']; delete headers['access-control-allow-origin'];
     res.writeHead(response.statusCode || 502, headers);
@@ -97,7 +153,7 @@ async function proxy(req, res, url, entry) {
     if (!res.headersSent) json(res, 502, { error: '后端任务中断或超时，请重试；大文件可能超出免费实例内存。' });
     else res.destroy();
   });
-  upstream.end(Buffer.concat(parts));
+  upstream.end(body);
 }
 const server = http.createServer(async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
