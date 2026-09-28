@@ -4,6 +4,7 @@
 import { setLLMProvider, getLLMProvider, setKGProvider, getKGProvider, createLLMProvider, VENDOR_PRESETS } from '../../llm-provider.js';
 import { setEmbeddingProvider, createProvider as createEmbeddingProvider } from '../../embedding-provider.js';
 import { detectOllama } from '../../ollama-detector.js';
+import { hostedTrial, validateHostedModel } from '../../hosted-policy.js';
 
 /**
  * 校验 provider 配置，返回警告列表（不阻止保存，但提醒用户缺失的关键字段）
@@ -49,6 +50,7 @@ function validateConfig(cfg) {
 async function applyConfig(config, setter) {
   // 创建副本，避免直接修改传入的 config 对象（调用方可能复用该对象）
   const cfg = { ...config };
+  validateHostedModel(cfg);
   // 兼容旧配置：将 legacy 'openai' 迁移到 'openai-compatible'
   if (cfg.provider === 'openai') {
     cfg.provider = 'openai-compatible';
@@ -129,7 +131,15 @@ export function getKGProviderHandler() {
  * @param {{baseUrl?:string, tryStart?:boolean, maxWait?:number, customPath?:string}} param
  */
 export async function ollamaStatusHandler({ baseUrl, tryStart = true, maxWait = 30000, customPath } = {}) {
+  if (hostedTrial) return { success: true, running: false, models: [], error: '云端试验无法检测或启动你电脑上的 Ollama，请在桌面版使用本地模型。' };
   const result = await detectOllama({ baseUrl, tryStart, maxWait, customPath });
   // 业务状态统一返回 200，避免前端把"未检测到"当成 HTTP 异常
   return { success: true, ...result };
+}
+
+export async function testConnectionHandler(config = {}) {
+  validateHostedModel(config);
+  const provider = createLLMProvider(config.provider || 'stub', config);
+  const response = await provider.complete('你好，请回复连接成功', { timeout: 60000, maxTokens: 32 });
+  return { success: true, response };
 }

@@ -178,6 +178,7 @@ export const logsApi = {
 
 // ===== LLM 连接测试（客户端直接调用 LLM API） =====
 export async function testLLMConnection(config) {
+  if (window.__KS_HOSTED_TRIAL__) return request('/settings/connection-test', { method: 'POST', body: config, timeout: 70000 });
   const { provider, model, apiKey, baseUrl } = config
   if (!provider || provider === 'stub') {
     return { success: true, response: '[Stub 模式] 无需测试连接，将使用离线模拟响应。' }

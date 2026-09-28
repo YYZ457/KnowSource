@@ -12,7 +12,7 @@ import { clearAll, getClearToken } from './handlers/clear.js';
 import { matchHandler } from './handlers/match.js';
 import { searchHandler } from './handlers/search.js';
 import { listIdeas, createIdea, updateIdea, deleteIdea, recommendIdeaNodes, linkIdeaToNode, unlinkIdeaFromNode } from './handlers/idea.js';
-import { setLLMProviderHandler, getLLMProviderHandler, setKGProviderHandler, getKGProviderHandler, ollamaStatusHandler } from './handlers/settings.js';
+import { setLLMProviderHandler, getLLMProviderHandler, setKGProviderHandler, getKGProviderHandler, ollamaStatusHandler, testConnectionHandler } from './handlers/settings.js';
 import { getPromptsHandler, setPromptHandler, resetPromptHandler, setDisabledHandler, getLLMLogHandler, testPromptHandler, initPromptStore } from './handlers/prompts.js';
 import { listProjectsHandler, createProjectHandler, renameProjectHandler, updateProjectHandler, deleteProjectHandler, switchProjectHandler, exportProjectHandler, importProjectHandler } from './handlers/projects.js';
 import { storage } from '../storage.js';
@@ -43,6 +43,11 @@ function checkApiToken(req) {
   if (!API_TOKEN) return true;
   const headerToken = req.headers['x-knowledge-ide-token'];
   if (headerToken === API_TOKEN) return true;
+  // Only PDF resources may use the query token; iframe requests cannot set a header.
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    const url = new URL(req.url, 'http://localhost');
+    if (/^\/documents\/[^/]+\/pdf$/.test(url.pathname) && url.searchParams.get('token') === API_TOKEN) return true;
+  }
   return false;
 }
 
@@ -118,6 +123,7 @@ const routes = [
   { method: 'POST', path: '/settings/kg', handler: setKGProviderHandler },
   { method: 'GET', path: '/settings/kg', handler: getKGProviderHandler },
   { method: 'POST', path: '/settings/ollama-status', handler: ollamaStatusHandler },
+  { method: 'POST', path: '/settings/connection-test', handler: testConnectionHandler },
   // 提示词自定义与 LLM 调用日志
   { method: 'GET', path: '/settings/prompts', handler: getPromptsHandler },
   { method: 'POST', path: '/settings/prompts', handler: setPromptHandler },

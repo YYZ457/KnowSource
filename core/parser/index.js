@@ -36,6 +36,7 @@ try {
 // 定位本地语言包目录：打包后在 resources/traineddata，开发期在项目根目录
 function resolveTraineddataDir() {
   const candidates = [];
+  if (process.env.KNOWLEDGE_IDE_TRAINEDDATA_DIR) candidates.push(process.env.KNOWLEDGE_IDE_TRAINEDDATA_DIR);
   if (process.resourcesPath) {
     candidates.push(path.join(process.resourcesPath, 'traineddata'));
   }

@@ -584,6 +584,7 @@ async function parsePDFPages(buffer, options = {}) {
   const pdf = await withTimeout(
     pdfjsLib.getDocument({
       data,
+      isEvalSupported: false,
       disableFontFace: true,
       useSystemFonts: false,
       cMapUrl: PDFJS_CMAP_URL,

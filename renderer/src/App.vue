@@ -1,5 +1,6 @@
 <template>
   <div class="app-root" :data-theme="uiStore.theme">
+    <div v-if="hostedTrial" style="padding:6px 14px;font-size:12px;background:#fff4ce;color:#604b00;flex-shrink:0">原版云端试验 · 每个浏览器独立空间 · 服务重启后资料可能清空，请及时导出项目备份 · 单文件建议 ≤10 MB</div>
     <!-- ===== Top Bar ===== -->
     <header class="topbar">
       <div class="topbar__brand">
@@ -111,6 +112,7 @@ import SettingsOverlay from './components/SettingsOverlay.vue'
 import OnboardingTour from './components/OnboardingTour.vue'
 
 const uiStore = useUiStore()
+const hostedTrial = !!window.__KS_HOSTED_TRIAL__
 const onboardingRef = ref(null)
 const docsStore = useDocsStore()
 const graphStore = useGraphStore()

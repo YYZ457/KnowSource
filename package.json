@@ -8,6 +8,8 @@
     "dev:backend": "node services/server.js",
     "dev:electron": "concurrently \"npm run dev:backend\" \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build",
+    "build:web": "node scripts/prepare-web-ocr.mjs && vite build",
+    "start:web": "node services/web-server.js",
     "preview": "vite preview",
     "dist": "vite build && electron-builder --win",
     "dist:mac": "vite build && electron-builder --mac",
