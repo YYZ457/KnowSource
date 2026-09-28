@@ -65,8 +65,10 @@ async function request(path, options = {}) {
     const text = await resp.text().catch(() => '')
     // 尝试解析 JSON 获取友好错误消息
     let message = `API ${resp.status}`
+    let parsedBody = null
     try {
       const parsed = JSON.parse(text)
+      parsedBody = parsed
       if (parsed.error) message = parsed.error
       else if (parsed.message) message = parsed.message
     } catch {
@@ -75,6 +77,7 @@ async function request(path, options = {}) {
     const err = new Error(message)
     err.status = resp.status
     err.body = text
+    err.data = parsedBody
     throw err
   }
 
@@ -182,7 +185,15 @@ export async function testLLMConnection(config) {
 }
 
 async function agentRequest(path, options) {
-  const data = await request(path, options)
+  let data
+  try { data = await request(path, options) }
+  catch (error) {
+    // Older servers incorrectly classified terminal run snapshots as HTTP errors.
+    const snapshot = error.data
+    if (path === '/agent/status' && snapshot?.runId === options?.params?.runId &&
+        ['running', 'completed', 'failed', 'cancelled', 'awaiting_confirmation'].includes(snapshot.status)) return snapshot
+    throw error
+  }
   if (data?.success === false || (data?.error && !data?.status)) throw new Error(data.error || data.message || 'Agent 请求失败')
   return data
 }

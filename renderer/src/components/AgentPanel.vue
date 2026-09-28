@@ -21,6 +21,7 @@
         <div class="heading-buttons"><button class="btn btn--sm history-toggle" @click="showHistory = !showHistory">对话</button><button class="btn btn--sm context-toggle" @click="showContext = !showContext">文献与步骤</button></div>
       </header>
       <div v-if="notice || storageNotice" class="agent-notice" role="status">{{ notice || storageNotice }}</div>
+      <div v-if="pollingProblem && !readOnlyHistory" class="model-alert" role="status"><span>{{ pollingProblem }}<br />这里只暂停了进度读取，服务器任务可能仍在执行；请先恢复进度，避免重复提交。</span><button class="btn btn--sm" :disabled="pollingRetrying" @click="resumeRun">{{ pollingRetrying ? '正在重新连接…' : '重新读取进度' }}</button></div>
       <div v-if="rawStorageBackup" class="model-alert"><span>原有存储无法读取，自动保存已暂停。</span><button class="btn btn--sm" @click="downloadRawBackup">下载原始备份</button><button class="btn btn--sm" @click="resetBrokenStorage">重置存储</button></div>
       <div v-if="readOnlyHistory" class="model-alert"><span>这是其他项目的历史对话，仅供查看和导出。旧文献和操作不会关联到当前项目。</span><button class="btn btn--sm" @click="newConversation">开始当前项目对话</button></div>
       <div v-if="!model.configured" class="model-alert"><span>先连接一个模型，就能开始研究。使用云端模型时，选中文献的相关内容会发送给该服务商。</span><button class="btn btn--sm" @click="uiStore.openSettings('model')">连接模型</button></div>
@@ -31,16 +32,16 @@
           <p v-if="!skills.length" class="muted">{{ skillsLoading ? '正在读取可用技能…' : '技能暂未加载，可点击右侧“刷新状态”重试。' }}</p>
         </div>
         <article v-for="message in conversation?.messages || []" :key="message.id" class="agent-message" :class="message.role">
-          <div class="message-author"><span>{{ message.role === 'user' ? '你' : '知源 Agent' }}</span><small>{{ message.status ? statusLabel(message.status) : '' }}</small></div>
+          <div class="message-author"><span>{{ message.role === 'user' ? '你' : '知源 Agent' }}</span><small>{{ pollingProblem && message.runId === runState?.runId ? '进度待同步' : message.status ? statusLabel(message.status) : '' }}</small></div>
           <div class="message-content">{{ message.content || (message.status === 'running' ? '正在理解任务、查找资料…' : '等待下一步操作') }}</div>
           <details v-if="message.steps?.length" class="message-steps"><summary>查看执行过程 · {{ message.steps.length }} 步</summary><ol><li v-for="step in message.steps" :key="step.id"><strong>{{ step.title }}</strong> · {{ statusLabel(step.status) }}<p v-if="step.detail">{{ step.detail }}</p></li></ol></details>
           <div v-if="message.citations?.length" class="citation-list"><button v-for="(citation, index) in message.citations" :key="`${citation.docId}-${index}`" class="citation" @click="openCitation(citation)"><span>↗ {{ citation.title || '来源文献' }}</span><small>{{ citation.excerpt }}</small></button></div>
           <div v-if="message.actions?.length" class="action-records"><details v-for="action in message.actions" :key="action.id"><summary>{{ action.title || action.tool }} · {{ action.uiResult || statusLabel(action.status) }}</summary><pre>{{ safeJson(action.args) }}</pre><p v-if="action.result">{{ typeof action.result === 'string' ? action.result : safeJson(action.result) }}</p></details></div>
         </article>
         <div v-if="!readOnlyHistory && runState?.status === 'awaiting_confirmation'" class="confirmation-box" role="region" aria-label="待确认的操作">
-          <strong>请核对后再执行</strong><p>下面的操作会修改当前项目或生成文件。确认只适用于本次列出的具体参数。</p>
-          <div v-for="action in pendingActions" :key="action.id" class="pending-action"><h4>{{ action.title || action.tool }}</h4><code>{{ action.tool }}</code><pre>{{ safeJson(action.args) }}</pre></div>
-          <div class="confirm-buttons"><button class="btn btn--primary" :disabled="actionBusy || !pendingActions.length" @click="confirmActions">{{ actionBusy ? '正在提交…' : `确认执行 ${pendingActions.length} 项操作` }}</button><button class="btn" :disabled="actionBusy" @click="cancelRun">取消本次操作</button></div>
+          <strong>请核对本批操作后再执行</strong><p>操作会按顺序执行；整批确认可保留操作之间的依赖。确认仅适用于下面的具体参数，执行后 Agent 会继续处理原任务，新增修改仍需再次确认。</p>
+          <div v-for="action in pendingActions" :key="action.id" class="pending-action"><h4>{{ action.title || action.tool }}</h4><code>{{ action.tool }}</code><p v-if="action.key" class="muted">操作编号：{{ action.key }}（参数中的 $ref 指向这个编号）</p><pre>{{ safeJson(action.args) }}</pre></div>
+          <div class="confirm-buttons"><button class="btn btn--primary" :disabled="actionBusy || !!pollingProblem || !pendingActions.length" @click="confirmActions">{{ actionBusy ? '正在提交…' : `确认本批 ${pendingActions.length} 项并继续` }}</button><button class="btn" :disabled="actionBusy" @click="cancelRun">停止整个任务</button></div>
         </div>
         <div v-if="importReady" class="confirmation-box"><strong>现在可以导入文献</strong><p>浏览器需要你亲自选择文件。文件只会导入当前项目，不会读取电脑上的其他资料。</p><button class="btn btn--primary" :disabled="importing" @click="documentInput?.click()">{{ importing ? '正在导入…' : '选择要导入的文献' }}</button><input ref="documentInput" type="file" accept=".pdf,.docx,.txt,.md,.markdown,.html,.csv,.json,.pptx,.jpg,.jpeg,.png" multiple hidden @change="importDocuments" /></div>
       </div>
@@ -71,7 +72,17 @@
         </div>
         <button class="text-button" @click="uiStore.setView('documents')">打开文献库 ↗</button>
       </div>
-      <div class="context-section"><h3>任务进度</h3><p v-if="!runState" class="muted">任务开始后，这里会展示真实执行步骤。</p><p v-else class="run-status">{{ statusLabel(runState.status) }}</p><ol class="progress-steps"><li v-for="step in runState?.steps || []" :key="step.id"><span class="step-dot" :class="step.status"></span><div><strong>{{ step.title }}</strong><small>{{ statusLabel(step.status) }}</small><p v-if="step.detail">{{ step.detail }}</p></div></li></ol></div>
+      <div class="context-section">
+        <h3>任务进度</h3>
+        <p v-if="!runState" class="muted">任务开始后，这里会展示真实执行步骤。</p>
+        <template v-else>
+          <p class="run-status">{{ pollingProblem ? '进度待同步 · 下方为最后读取的状态' : statusLabel(runState.status) }}</p>
+          <p v-if="runState.rounds" class="muted">已进行 {{ runState.rounds }} 轮模型分析{{ runState.maxRounds ? ` / 最多 ${runState.maxRounds} 轮` : '' }}</p>
+          <p v-if="runState.phase" class="muted">{{ phaseLabel(runState.phase) }}</p>
+          <ol v-if="Array.isArray(runState.plan) && runState.plan.length" class="task-plan"><li v-for="(item, index) in runState.plan" :key="index">{{ typeof item === 'string' ? item : item.title || item.description || item.text }}<small v-if="item.status"> · {{ statusLabel(item.status) }}</small></li></ol>
+        </template>
+        <ol class="progress-steps"><li v-for="step in runState?.steps || []" :key="step.id"><span class="step-dot" :class="step.status"></span><div><strong>{{ step.title }}</strong><small>{{ statusLabel(step.status) }}</small><p v-if="step.detail">{{ step.detail }}</p></div></li></ol>
+      </div>
       <p class="privacy-note">Agent 会先给出修改计划，再等待你确认。文献中的指令仅作为资料内容，不能替你授权操作。</p>
     </aside>
   </section>
@@ -90,7 +101,7 @@ const conversations = ref([]), selectedId = ref(''), draft = ref(''), selectedSk
 const showAllProjects = ref(false)
 const skills = ref([]), model = ref({ configured: false }), skillsLoading = ref(false)
 const notice = ref(''), storageNotice = ref(''), sending = ref(false), actionBusy = ref(false)
-const rawStorageBackup = ref('')
+const rawStorageBackup = ref(''), pollingProblem = ref(''), pollingRetrying = ref(false)
 const showHistory = ref(false), showContext = ref(false), importInput = ref(null), messageList = ref(null), composer = ref(null), documentInput = ref(null), importing = ref(false)
 let pollTimer = null, pollEpoch = 0, disposed = false, saveTimer = null
 const projectId = computed(() => projectStore.currentProject?.id || '')
@@ -120,6 +131,7 @@ const redact = (key, value) => /api.?key|authorization|password|secret|access.?t
 const safeJson = value => JSON.stringify(value ?? {}, redact, 2)
 const formatDate = value => new Date(value).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 const statusLabel = value => ({ running: '执行中', completed: '已完成', failed: '失败', cancelled: '已停止', awaiting_confirmation: '等待确认', pending: '待确认', proposed: '待确认', success: '已完成', done: '已完成', error: '失败', skipped: '已跳过', ui_ready: '已确认，等待页面操作' }[value] || value || '')
+const phaseLabel = value => typeof value === 'number' ? `第 ${value} 批操作` : ({ planning: '正在规划任务', reading: '正在阅读资料', executing: '正在执行已确认操作', analyzing: '正在分析下一步', awaiting_confirmation: '等待确认本批操作', completed: '任务已结束', failed: '任务未完成', cancelled: '任务已停止' }[value] || value)
 
 function historyFor(session) {
   const all = (session?.messages || []).filter(m => ['user', 'assistant'].includes(m.role) && m.content)
@@ -163,8 +175,8 @@ function sanitizeSession(raw) {
         title: text(citation.title, 300),
         excerpt: text(citation.excerpt, 2000),
       })) : [],
-      steps: Array.isArray(message.steps) ? message.steps.filter(Boolean).slice(0, 30) : [],
-      actions: Array.isArray(message.actions) ? message.actions.filter(Boolean).slice(0, 20) : [],
+      steps: Array.isArray(message.steps) ? message.steps.filter(Boolean).slice(0, 240) : [],
+      actions: Array.isArray(message.actions) ? message.actions.filter(Boolean).slice(0, 120) : [],
     }))
   return {
     id: uid(),
@@ -225,12 +237,13 @@ function newConversation() {
   if (busy.value || !projectId.value) return
   const session = { id: uid(), title: '新的研究对话', projectId: projectId.value, documentIds: docsStore.selectedDocId ? [docsStore.selectedDocId] : [], messages: [], updatedAt: Date.now(), run: null, trimmed: false }
   conversations.value.unshift(session); selectedId.value = session.id
-  draft.value = ''; selectedSkill.value = null; notice.value = ''; showHistory.value = false
+  draft.value = ''; selectedSkill.value = null; notice.value = ''; pollingProblem.value = ''; showHistory.value = false
   stopPolling(); persist()
 }
 function selectConversation(id) {
   if (busy.value && selectedId.value !== id) return
   selectedId.value = id
+  pollingProblem.value = ''
   draft.value = ''
   selectedSkill.value = null
   showHistory.value = false
@@ -302,38 +315,58 @@ function selectAllDocs() {
   if (docsStore.documents.length > 12) notice.value = '单轮最多 12 篇，已选列表前 12 篇。请核对范围，剩余文献可分批研究。'
 }
 function onComposerKeydown(event) { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendMessage() } }
-function stopPolling() { pollEpoch++; clearTimeout(pollTimer); pollTimer = null }
+function stopPolling() { pollEpoch++; clearTimeout(pollTimer); pollTimer = null; pollingRetrying.value = false }
+function mergeRecords(previous, incoming) {
+  const records = new Map((previous || []).map(item => [item.id, item]))
+  for (const item of incoming || []) records.set(item.id, { ...records.get(item.id), ...item })
+  return [...records.values()]
+}
 function applySnapshot(session, snapshot) {
+  const previous = session.run?.runId === snapshot.runId ? session.run : null
+  const previousActions = new Map((previous?.actions || []).map(action => [action.id, action.status]))
+  snapshot = {
+    ...previous, ...snapshot,
+    steps: mergeRecords(previous?.steps, snapshot.steps),
+    actions: mergeRecords(previous?.actions, snapshot.actions),
+    citations: snapshot.citations ?? previous?.citations ?? [],
+  }
+  const terminal = ['completed', 'failed', 'cancelled'].includes(snapshot.status)
+  if (terminal) snapshot.steps = snapshot.steps.map(step => step.status === 'running' ? { ...step, status: snapshot.status === 'completed' ? 'completed' : snapshot.status } : step)
   session.run = snapshot
   let message = session.messages.find(m => m.runId === snapshot.runId)
   if (!message) { message = { id: uid(), role: 'assistant', runId: snapshot.runId, content: '' }; session.messages.push(message) }
-  Object.assign(message, { status: snapshot.status, content: text(snapshot.answer) || (snapshot.error ? `执行未完成：${text(snapshot.error)}` : snapshot.status === 'cancelled' ? '已停止后续步骤。已完成的修改不会撤销。' : ''), steps: snapshot.steps || [], citations: snapshot.citations || [], actions: snapshot.actions || [] })
+  const answer = text(snapshot.answer)
+  const failure = snapshot.status === 'failed' ? `任务已停止：${text(snapshot.error) || '未能完成任务。'}\n已执行的操作仍然保留，可查看下方记录后决定下一步。` : ''
+  Object.assign(message, { status: snapshot.status, content: failure ? (answer && answer !== snapshot.error ? `${answer}\n\n${failure}` : failure) : answer || (snapshot.status === 'cancelled' ? '已停止后续步骤。已完成的修改不会撤销。' : ''), steps: snapshot.steps, citations: snapshot.citations, actions: snapshot.actions })
   session.updatedAt = Date.now(); persist()
-  if (snapshot.status === 'completed') emit('refresh')
+  if ((terminal && previous?.status !== snapshot.status) || snapshot.actions.some(action => ['completed', 'done', 'success', 'ui_ready'].includes(action.status) && previousActions.get(action.id) !== action.status)) emit('refresh')
   applyUiActions(session, snapshot)
   nextTick(() => { const box = messageList.value; if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 220) box.scrollTop = box.scrollHeight })
 }
 function pollRun(session, runId) {
   stopPolling(); const epoch = pollEpoch
+  let failures = 0
+  pollingRetrying.value = !!pollingProblem.value
   async function poll() {
     if (disposed || epoch !== pollEpoch) return
     try {
       const snapshot = await agentApi.status(runId)
       if (disposed || epoch !== pollEpoch) return
-      if (snapshot.success === false && !snapshot.status) {
-        applySnapshot(session, { ...session.run, status: 'failed', error: snapshot.error || '任务已失效，请重新发起。' }); return
-      }
-      if (snapshot.error && !snapshot.status) throw new Error(snapshot.error)
+      if (snapshot.runId !== runId || !['running', 'completed', 'failed', 'cancelled', 'awaiting_confirmation'].includes(snapshot.status)) throw new Error(snapshot.error || '服务器未返回有效任务进度')
+      failures = 0; pollingProblem.value = ''; pollingRetrying.value = false
       applySnapshot(session, snapshot)
       if (snapshot.status === 'running') pollTimer = setTimeout(poll, 1200)
     } catch (error) {
       if (disposed || epoch !== pollEpoch) return
       if ([404, 410].includes(error.status) || (error.status === 400 && /任务不存在|已过期|服务重启/.test(error.message))) {
+        pollingProblem.value = ''; pollingRetrying.value = false
         applySnapshot(session, { ...session.run, status: 'failed', error: '任务已过期或服务已重启，请重新发起。' })
         return
       }
-      notice.value = `读取进度失败：${error.message}。若服务已重启，请停止旧任务后重试。`
-      pollTimer = setTimeout(poll, 6000)
+      failures++
+      pollingProblem.value = `暂时无法同步进度：${error.message}${failures < 4 ? `（正在自动重连 ${failures}/3）` : '。自动重连已暂停。'}`
+      pollingRetrying.value = failures < 4
+      if (failures < 4) pollTimer = setTimeout(poll, Math.min(2000 * 2 ** (failures - 1), 10000))
     }
   }
   poll()
@@ -351,7 +384,7 @@ async function sendMessage() {
   const message = draft.value.trim(), history = historyFor(session)
   const validIds = session.documentIds.filter(id => docsStore.documents.some(d => d.id === id))
   if (validIds.length !== session.documentIds.length) { session.documentIds = validIds; notice.value = '部分文献已不存在，已从选择中移除。请核对后重新发送。'; return }
-  sending.value = true; notice.value = ''; session.trimmed ||= history.trimmed
+  sending.value = true; notice.value = ''; pollingProblem.value = ''; session.trimmed ||= history.trimmed
   session.messages.push({ id: uid(), role: 'user', content: message }); session.updatedAt = Date.now()
   if (session.messages.length === 1) session.title = message.slice(0, 32)
   draft.value = ''; persist()
@@ -365,10 +398,15 @@ async function sendMessage() {
 }
 async function confirmActions() {
   const session = conversation.value, ids = pendingActions.value.map(a => a.id)
-  if (!session?.run?.runId || !ids.length || actionBusy.value || session.projectId !== projectId.value) return
+  if (!session?.run?.runId || !ids.length || actionBusy.value || pollingProblem.value || session.projectId !== projectId.value) return
   actionBusy.value = true; notice.value = ''
-  try { const result = await agentApi.confirm(session.run.runId, ids); if (result?.error) throw new Error(result.error); session.run.status = 'running'; persist(); pollRun(session, session.run.runId) }
-  catch (error) { notice.value = `确认失败：${error.message}`; pollRun(session, session.run.runId) }
+  try {
+    const result = await agentApi.confirm(session.run.runId, ids)
+    if (result?.runId && result?.status) applySnapshot(session, result)
+    // The confirmation response can already be terminal or awaiting the next batch.
+    if (['running', 'awaiting_confirmation'].includes(session.run.status)) pollRun(session, session.run.runId)
+  }
+  catch (error) { notice.value = `确认结果暂未核实：${error.message}。正在读取服务器状态，请勿重复确认。`; pollRun(session, session.run.runId) }
   finally { actionBusy.value = false }
 }
 async function cancelRun() {
@@ -376,10 +414,10 @@ async function cancelRun() {
   actionBusy.value = true
   try {
     const result = await agentApi.cancel(session.run.runId)
-    if (result?.error) throw new Error(result.error)
     stopPolling()
+    pollingProblem.value = ''
     applySnapshot(session, { ...session.run, ...result, runId: session.run.runId, status: result.status || session.run.status })
-    if (result.status !== 'cancelled') { notice.value = '停止请求已发送；已经开始的操作可能仍会完成，正在等待最终状态。'; pollRun(session, session.run.runId) }
+    if (['running', 'awaiting_confirmation'].includes(session.run.status)) { notice.value = '停止请求已发送；已经开始的操作可能仍会完成，正在等待最终状态。'; pollRun(session, session.run.runId) }
     emit('refresh')
   }
   catch (error) { notice.value = `停止请求未成功：${error.message}。任务可能仍在运行。`; }
@@ -448,7 +486,7 @@ function openCitation(citation) {
   uiStore.setView('documents')
   if (window.matchMedia('(max-width: 760px)').matches) uiStore.leftPanelVisible = false
 }
-watch(projectId, (value, old) => { if (value !== old) { stopPolling(); selectedId.value = ''; draft.value = ''; selectedSkill.value = null; ensureConversation(); if (old) notice.value = '已切换项目，对话与文献范围同步切换。' } })
+watch(projectId, (value, old) => { if (value !== old) { stopPolling(); pollingProblem.value = ''; selectedId.value = ''; draft.value = ''; selectedSkill.value = null; ensureConversation(); if (old) notice.value = '已切换项目，对话与文献范围同步切换。' } })
 watch(() => uiStore.settingsOpen, (open, previous) => { if (previous && !open) loadSkills() })
 watch(() => uiStore.activeView, view => {
   if (view === 'agent') { consumeAgentEntry(); loadSkills(); resumeRun() }
@@ -469,6 +507,7 @@ onBeforeUnmount(() => { disposed = true; stopPolling(); clearTimeout(saveTimer);
 </script>
 
 <style scoped>
+.task-plan{font-size:11px;line-height:1.8;padding-left:18px;color:var(--text-2)}.step-dot.failed,.step-dot.error{background:#c74747}.step-dot.cancelled{background:var(--text-3)}
 .research-agent{display:grid;grid-template-columns:220px minmax(0,1fr) 280px;height:100%;min-height:0;overflow:hidden;background:var(--bg-void);color:var(--text)}
 .agent-history,.agent-context{min-height:0;overflow-y:auto;padding:22px 16px;background:var(--bg-card)}.agent-history{display:flex;flex-direction:column;border-right:1px solid var(--border)}.agent-context{border-left:1px solid var(--border)}
 .rail-heading{display:flex;align-items:center;justify-content:space-between;font-size:14px;margin-bottom:18px}.new-chat{width:100%;justify-content:center}.rail-caption{font-size:11px;color:var(--text-3);margin:20px 0 8px;overflow-wrap:anywhere}.conversation-list{flex:1;overflow:auto;min-height:80px}.conversation{display:block;width:100%;text-align:left;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--text-2);padding:12px;margin-bottom:5px;cursor:pointer}.conversation.selected{background:var(--accent-dim);border-color:var(--accent-dim);color:var(--accent)}.conversation span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.conversation small{display:block;font-size:10px;color:var(--text-3);margin-top:6px}.history-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:16px}.privacy-note{font-size:10px;line-height:1.8;color:var(--text-3);margin:16px 0 0}.agent-main{display:flex;flex-direction:column;min-width:0;min-height:0}.agent-heading{display:flex;align-items:center;justify-content:space-between;padding:24px 30px 18px;border-bottom:1px solid var(--border);gap:12px}.eyebrow{font-size:9px;letter-spacing:2px;color:var(--accent);font-weight:700}.agent-heading h1{font-size:20px;font-weight:600;letter-spacing:-.5px;margin:7px 0}.agent-heading p{font-size:12px;color:var(--text-2);margin:0}.heading-buttons{display:flex;gap:5px}.history-toggle,.context-toggle,.mobile-close{display:none}.agent-notice{margin:12px 24px 0;padding:10px 12px;background:var(--accent-dim);border-radius:8px;font-size:12px;line-height:1.6}.model-alert{display:flex;align-items:center;gap:10px;padding:12px 24px;font-size:12px;line-height:1.6;color:var(--text-2);background:var(--bg-deep)}.model-alert span{flex:1}.model-alert button{white-space:nowrap}.agent-messages{flex:1;min-height:0;overflow-y:auto;padding:24px 30px;scroll-behavior:smooth}.agent-welcome{max-width:740px;margin:25px auto 30px}.welcome-symbol{width:48px;height:48px;background:var(--accent-dim);border-radius:14px;display:grid;place-items:center;color:var(--accent);font-size:27px;margin-bottom:18px}.agent-welcome h2{font-size:24px;letter-spacing:-.5px;margin:0 0 10px}.agent-welcome>p{font-size:13px;line-height:1.8;color:var(--text-2)}.skill-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:25px}.skill-card{display:flex;flex-direction:column;text-align:left;gap:9px;padding:17px;border:1px solid var(--border);background:var(--bg-card);border-radius:13px;color:var(--text);cursor:pointer;transition:border-color .15s,transform .15s}.skill-card:hover{border-color:var(--accent);transform:translateY(-2px)}.skill-card strong{font-size:13px}.skill-card span{font-size:11px;color:var(--text-2);line-height:1.7;flex:1}.skill-card small{font-size:10px;color:var(--accent);margin-top:8px}.agent-message{margin-bottom:24px;border:1px solid var(--border);padding:18px;border-radius:14px;background:var(--bg-card)}.agent-message.user{margin-left:45px;background:var(--accent-glow)}.message-author{display:flex;justify-content:space-between;font-weight:600;font-size:12px;margin-bottom:12px;color:var(--accent)}.message-author small{font-weight:400;color:var(--text-3)}.message-content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.9}.message-steps,.action-records{font-size:11px;color:var(--text-2);margin-top:12px}.message-steps summary,.action-records summary{cursor:pointer;padding:7px 0}.message-steps ol{padding-left:20px}.message-steps p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}.citation-list{display:flex;flex-direction:column;gap:6px;margin-top:14px}.citation{border:1px solid var(--border);border-radius:8px;background:var(--bg-void);padding:9px;text-align:left;color:var(--accent);cursor:pointer}.citation span{display:block;font-size:11px}.citation small{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;line-height:1.6;font-size:10px;color:var(--text-2);margin-top:5px}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font-size:11px;line-height:1.7;background:var(--bg-input);padding:10px;border-radius:7px}.confirmation-box{padding:20px;border:1px solid var(--accent);border-radius:12px;background:var(--accent-glow);margin-bottom:20px}.confirmation-box>strong{font-size:15px}.confirmation-box p{font-size:12px;line-height:1.7;color:var(--text-2)}.pending-action h4{margin:14px 0 5px;font-size:12px}.pending-action code{font-size:10px;color:var(--text-3)}.confirm-buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.agent-composer{padding:12px 24px 15px;border-top:1px solid var(--border);background:var(--bg-card)}.composer-context{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:10px;color:var(--text-3)}.skill-chip{background:var(--accent-dim);color:var(--accent);border:0;border-radius:20px;padding:4px 8px;font-size:10px;cursor:pointer}.agent-composer textarea{resize:vertical;min-height:75px;max-height:180px;border-radius:10px;padding:12px;line-height:1.6;background:var(--bg-void)}.composer-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px}.composer-footer small,.context-note{font-size:10px;color:var(--text-3)}.context-note{margin:9px 0 0;line-height:1.5}.model-card{background:var(--bg-void);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px}.model-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-right:7px}.model-dot.ready{background:var(--accent)}.model-card p{font-size:11px;color:var(--text-2);overflow-wrap:anywhere;line-height:1.7;margin:8px 0}.model-controls{display:flex;justify-content:space-between;gap:8px}.text-button{border:0;background:transparent;color:var(--accent);font-size:11px;padding:4px 0;cursor:pointer}.context-section{margin-top:24px;padding-top:18px;border-top:1px solid var(--border)}.context-section h3{font-size:12px;margin:0 0 9px}.section-title{display:flex;justify-content:space-between;align-items:center}.section-title h3{margin:0}.muted{color:var(--text-3);font-size:11px;line-height:1.7}.document-options{max-height:270px;overflow-y:auto;margin:12px 0}.document-option{display:flex;align-items:flex-start;gap:8px;font-size:11px;line-height:1.7;cursor:pointer;padding:7px 0}.document-option input{width:14px;height:14px;margin-top:3px;accent-color:var(--accent);flex-shrink:0}.document-option span{overflow-wrap:anywhere}.run-status{font-size:11px;color:var(--accent)}.progress-steps{list-style:none;margin:12px 0;padding:0}.progress-steps li{display:flex;gap:9px;margin-bottom:16px}.step-dot{width:7px;height:7px;border-radius:50%;background:var(--text-3);margin-top:5px;flex-shrink:0}.step-dot.completed,.step-dot.success,.step-dot.running{background:var(--accent)}.progress-steps strong{font-size:11px;display:block}.progress-steps small{font-size:10px;color:var(--text-3)}.progress-steps p{font-size:10px;line-height:1.7;color:var(--text-2);overflow-wrap:anywhere;margin:5px 0}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}

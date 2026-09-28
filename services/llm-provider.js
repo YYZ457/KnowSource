@@ -12,6 +12,12 @@
 export function inferCapabilities(vendor, model) {
   const m = (model || '').toLowerCase();
 
+  // DeepSeek 的 JSON 能力来自服务端协议，与模型名是否包含 flash 无关。
+  // contextWindow 为调度时的保守预算，不代表服务商当前公布的最大窗口。
+  if ((vendor || '').toLowerCase() === 'deepseek') {
+    return { qualityLevel: 'strong', contextWindow: 128000, supportsJsonMode: true };
+  }
+
   // Ollama 本地模型：按参数量分级
   if (vendor === 'ollama') {
     if (/(?:0\.5b|1b|1\.5b|2b|3b|tiny|small)/.test(m)) {
@@ -97,6 +103,39 @@ function completionDeadline(options, fallback) {
   options.signal?.addEventListener('abort', cancel, { once: true });
   if (options.signal?.aborted) cancel();
   return { signal: controller.signal, cleanup() { clearTimeout(timer); options.signal?.removeEventListener('abort', cancel); } };
+}
+
+// Structured callers must never execute a truncated or interrupted instruction.
+// These are completed HTTP responses, so leave any bounded recovery to the caller
+// instead of silently retrying the same generation through withRetry.
+function completionResult(content, finishReason, usage, options) {
+  const fail = (code, message) => {
+    const error = new Error(message);
+    error.code = code;
+    error.finishReason = finishReason || null;
+    error.unrecoverable = true;
+    throw error;
+  };
+  if (options.responseFormat === 'json') {
+    if (finishReason === 'length') {
+      fail('LLM_OUTPUT_TRUNCATED', '模型输出达到长度限制，操作指令尚未完整生成。需要增加输出预算或拆分本步任务。');
+    }
+    if (finishReason === 'content_filter') {
+      fail('LLM_FILTERED', '模型服务未返回完整内容：本次输出被内容过滤。请调整请求后重试。');
+    }
+    if (finishReason === 'insufficient_system_resource' || finishReason === 'aborted') {
+      fail('LLM_GENERATION_INTERRUPTED', '模型服务中断了本次生成，未取得完整操作指令。请稍后重试。');
+    }
+    if (finishReason === 'tool_calls' || finishReason === 'function_call') {
+      fail('LLM_UNEXPECTED_TOOL_CALLS', '模型返回了未请求的函数调用，未取得 JSON 操作指令。');
+    }
+  }
+  if (typeof content !== 'string' || !content.trim()) {
+    fail('LLM_EMPTY_CONTENT', '模型未返回可用的最终内容。请重试或调整本步请求；思考内容不会作为操作指令执行。');
+  }
+  return options.returnMetadata
+    ? { content, finishReason: finishReason || null, usage: usage || null }
+    : content;
 }
 
 // Stub LLM（无网络时回退）
@@ -185,7 +224,12 @@ class OllamaLLMProvider {
           throw err;
         }
         const data = await resp.json();
-        return data.message?.content ?? data.response ?? '';
+        return completionResult(
+          data.message?.content ?? data.response,
+          data.done_reason,
+          { prompt_tokens: data.prompt_eval_count, completion_tokens: data.eval_count },
+          options
+        );
       } catch (error) {
         if (deadline.signal.aborted) throw deadline.signal.reason;
         throw error;
@@ -401,8 +445,8 @@ class OpenAICompatibleLLMProvider {
         if (options.stop && Array.isArray(options.stop)) {
           body.stop = options.stop;
         }
-        // JSON mode：strong 模型启用原生 JSON 输出，避免脆弱的正则解析
-        if (options.responseFormat === 'json' && this.capabilities?.qualityLevel === 'strong') {
+        // JSON mode 由协议能力决定，不以名称或质量分档作为开关。
+        if (options.responseFormat === 'json' && this.capabilities?.supportsJsonMode) {
           body.response_format = { type: 'json_object' };
         }
         const resp = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -422,16 +466,9 @@ class OpenAICompatibleLLMProvider {
           throw err;
         }
         const data = await resp.json();
-        // 空值保护：部分兼容服务在限流/错误时返回非标准结构
-        const content = data?.choices?.[0]?.message?.content;
-        if (content == null) {
-          // 修复：设置 status=200 使 withRetry 跳过重试（非 4xx/5xx，但内容不可恢复）
-          const err = new Error(`LLM 响应格式异常：未找到 choices[0].message.content（status ${resp.status}）`);
-          err.status = 200; // 标记为不可恢复（非网络错误、非限流）
-          err.unrecoverable = true;
-          throw err;
-        }
-        return content;
+        const choice = data?.choices?.[0];
+        // Only final content is executable. Never substitute reasoning_content.
+        return completionResult(choice?.message?.content, choice?.finish_reason, data?.usage, options);
       } catch (error) {
         if (deadline.signal.aborted) throw deadline.signal.reason;
         throw error;
