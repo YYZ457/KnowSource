@@ -7,6 +7,7 @@ import { resolve, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { VENDOR_PRESETS } from './llm-provider.js';
+import { rememberAgentRun, hasLiveAgentRun } from './agent/gateway-lifecycle.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -57,7 +58,7 @@ function createSession(res) {
   if (sessions.size >= maxSessions) return null;
   const id = randomBytes(32).toString('hex');
   // Model credentials live only in this browser session's gateway memory.
-  const entry = { id, token: randomBytes(32).toString('hex'), expires: Date.now() + lifetime, worker: null, starting: null, active: 0, lastUsed: Date.now(), port: null, modelConfigs: new Map() };
+  const entry = { id, token: randomBytes(32).toString('hex'), expires: Date.now() + lifetime, worker: null, starting: null, active: 0, lastUsed: Date.now(), port: null, modelConfigs: new Map(), agentRuns: new Map() };
   sessions.set(id, entry);
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.setHeader('Set-Cookie', `ks_trial=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${lifetime / 1000}${secure}`);
@@ -122,7 +123,7 @@ async function startWorker(entry) {
       } catch (err) { clearTimeout(timer); child.kill(); reject(err); }
     });
     child.once('error', () => { clearTimeout(timer); reject(new Error('研究空间启动失败。')); });
-    child.once('exit', () => { clearTimeout(timer); entry.worker = null; entry.port = null; reject(new Error('试验服务器资源不足，研究空间已停止。')); });
+    child.once('exit', () => { clearTimeout(timer); entry.worker = null; entry.port = null; entry.agentRuns.clear(); reject(new Error('试验服务器资源不足，研究空间已停止。')); });
   }).finally(() => { entry.starting = null; });
   return entry.starting;
 }
@@ -153,6 +154,19 @@ async function proxy(req, res, url, entry) {
   await startWorker(entry);
   entry.lastUsed = Date.now(); entry.active++;
   const upstream = http.request({ host: '127.0.0.1', port: entry.port, method: req.method, path: url.pathname.slice(4) + url.search, headers: { 'content-type': req.headers['content-type'] || 'application/json', 'content-length': bytes, 'x-knowledge-ide-token': entry.token } }, response => {
+    if (response.statusCode === 200 && ['/api/agent/run', '/api/agent/status', '/api/agent/confirm', '/api/agent/cancel'].includes(url.pathname)) {
+      const parts = []; let size = 0;
+      response.on('data', part => {
+        size += part.length;
+        if (size <= 1024 * 1024) parts.push(part);
+        else parts.length = 0;
+      });
+      response.once('end', () => {
+        if (size > 1024 * 1024) return;
+        try { rememberAgentRun(entry, JSON.parse(Buffer.concat(parts).toString('utf8'))); }
+        catch { /* A malformed response never authorizes or changes an action. */ }
+      });
+    }
     if (settingsPath && savedConfig && response.statusCode === 200) {
       const result = []; let resultBytes = 0;
       response.on('data', part => { resultBytes += part.length; if (resultBytes <= 64 * 1024) result.push(part); });
@@ -221,7 +235,7 @@ server.headersTimeout = 30000;
 server.listen(Number(process.env.PORT || 8080), process.env.HOST || '0.0.0.0', () => console.log(`[web] KnowSource original UI listening on ${server.address().port}`));
 setInterval(() => {
   for (const [id, entry] of sessions) {
-    if (!entry.active && entry.worker && Date.now() - entry.lastUsed > 5 * 60 * 1000) entry.worker.kill('SIGTERM');
+    if (!entry.active && entry.worker && Date.now() - entry.lastUsed > 5 * 60 * 1000 && !hasLiveAgentRun(entry)) entry.worker.kill('SIGTERM');
     if (Date.now() >= entry.expires && !entry.active) { entry.worker?.kill('SIGTERM'); sessions.delete(id); }
   }
 }, 30000).unref();

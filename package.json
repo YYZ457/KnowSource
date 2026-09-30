@@ -15,7 +15,7 @@
     "dist:mac": "vite build && electron-builder --mac",
     "dist:linux": "vite build && electron-builder --linux",
     "dist:all": "vite build && electron-builder -mwl",
-    "test": "node --test tests/ || echo 'No tests found, skipping'"
+    "test": "node --test tests/agent-gateway-lifecycle.test.mjs tests/agent-protocol.test.mjs tests/graph-visibility.test.mjs tests/pdf-preview.test.mjs tests/storage.test.mjs"
   },
   "build": {
     "appId": "com.knowsource.desktop",

@@ -4,8 +4,8 @@
  *  每个项目的数据存储在 DATA_DIR/<projectId>/ 子目录下
  *  任务进度仍保留在内存中（重启后自然清空）
  */
-import { existsSync, mkdirSync, statSync, writeFileSync, readFileSync, rmSync, renameSync } from 'node:fs';
-import { readFile, writeFile, rm, rename } from 'node:fs/promises';
+import { existsSync, mkdirSync, statSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { readFile, writeFile, rm, rename, open } from 'node:fs/promises';
 import { dirname, join, sep, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -134,64 +134,106 @@ function ensureDataDir() {
   }
 }
 
-async function loadJSON(filePath) {
-  if (NO_PERSIST || !existsSync(filePath)) return null;
-  let raw;
-  try {
-    raw = await readFile(filePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (e) {
-    console.error(`[storage] 加载失败 ${filePath}:`, e.message);
-    // 将损坏的原始内容备份到 .bak 文件，避免被后续 saveJSON 覆盖丢失
-    if (raw !== undefined) {
-      try {
-        writeFileSync(filePath + '.bak', raw);
-        console.warn(`[storage] 已备份损坏文件至 ${filePath}.bak`);
-      } catch (bakErr) {
-        console.error(`[storage] 备份失败:`, bakErr.message);
-      }
-    }
-    // 修复：尝试从轮转备份中恢复数据
-    const backups = ['.backup.1', '.backup.2', '.backup.3', '.bak'];
-    for (const suffix of backups) {
-      const backupPath = `${filePath}${suffix}`;
-      if (existsSync(backupPath)) {
-        try {
-          const backupRaw = await readFile(backupPath, 'utf-8');
-          const recovered = JSON.parse(backupRaw);
-          console.warn(`[storage] 已从备份恢复: ${backupPath}`);
-          return recovered;
-        } catch (backupErr) {
-          console.warn(`[storage] 备份也损坏 ${backupPath}:`, backupErr.message);
-        }
-      }
-    }
-    console.error(`[storage] 所有备份均不可用，返回 null`);
-    return null;
-  }
-}
-
 // 轮转备份数量
 const BACKUP_COUNT = 3;
 
-function rotateBackupSync(filePath) {
+// 临时文件与目标位于同一目录，rename 是唯一替换正式文件的操作。
+// 先同步并关闭临时文件；任何写入/替换失败都保留原正式文件，并清理临时文件。
+async function writeAtomic(filePath, raw, beforeReplace) {
+  const tmpFile = `${filePath}.tmp.${randomUUID()}`;
+  let handle;
   try {
-    // 先删除最旧的备份
-    if (existsSync(`${filePath}.backup.${BACKUP_COUNT}`)) {
-      rmSync(`${filePath}.backup.${BACKUP_COUNT}`, { force: true });
+    handle = await open(tmpFile, 'wx');
+    await handle.writeFile(raw, 'utf-8');
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    if (beforeReplace) await beforeReplace();
+    await rename(tmpFile, filePath);
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+    await rm(tmpFile, { force: true }).catch(() => {});
+  }
+}
+
+async function preserveCorruptJSON(filePath, raw) {
+  // .bak 可能是旧版唯一的有效备份，绝不能用损坏内容覆盖它。
+  const corruptPath = `${filePath}.corrupt.${Date.now()}.${randomUUID()}`;
+  await writeFile(corruptPath, raw, { encoding: 'utf-8', flag: 'wx' });
+  console.warn(`[storage] 已保留损坏文件至 ${corruptPath}`);
+}
+
+async function loadJSON(filePath) {
+  if (NO_PERSIST) return null;
+  // 恢复也使用写锁，避免读旧备份后覆盖刚刚完成的新保存。
+  const release = await getFileLock(filePath).acquire();
+  try {
+    const suffixes = ['', ...Array.from({ length: BACKUP_COUNT }, (_, i) => `.backup.${i + 1}`), '.bak'];
+    let firstError = null;
+    let corruptRaw;
+    for (const suffix of suffixes) {
+      const candidate = `${filePath}${suffix}`;
+      let raw, data;
+      try {
+        raw = await readFile(candidate, 'utf-8');
+        data = JSON.parse(raw);
+      } catch (e) {
+        if (e.code === 'ENOENT') continue;
+        firstError ||= e;
+        if (!suffix && raw !== undefined) corruptRaw = raw;
+        console.warn(`[storage] 加载失败 ${candidate}:`, e.message);
+        continue;
+      }
+      if (suffix) {
+        // 不轮转恢复源，保持全部可用备份。恢复失败时仍可使用内存数据，
+        // 同时记录日志和错误状态，不能假装已经修复了磁盘。
+        try {
+          if (corruptRaw !== undefined) await preserveCorruptJSON(filePath, corruptRaw);
+          await writeAtomic(filePath, raw);
+        } catch (e) {
+          lastWriteError = { filePath, message: e.message, code: e.code, time: Date.now() };
+          console.error(`[storage] 恢复正式文件失败 ${filePath}:`, e.message);
+        }
+        console.warn(`[storage] 已从备份加载: ${candidate}`);
+      }
+      return data;
     }
-    // 将旧备份依次后移
+    // 全部文件都不存在才是首次使用。已有文件均不可读时应停止加载，
+    // 避免将损坏的数据误当成空项目并在后续保存中覆盖。
+    if (firstError) {
+      throw new Error(`[storage] 无法加载 ${filePath}，所有备份均不可用`, { cause: firstError });
+    }
+    return null;
+  } finally {
+    release();
+  }
+}
+
+async function rotateBackup(filePath) {
+  let raw;
+  try {
+    raw = await readFile(filePath, 'utf-8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return;
+    throw e;
+  }
+  try {
+    JSON.parse(raw);
+  } catch {
+    await preserveCorruptJSON(filePath, raw);
+    return; // 不将损坏文件放入有效备份序列
+  }
+  try {
+    // 只移动备份，正式文件在整个轮转期间始终存在。
     for (let i = BACKUP_COUNT - 1; i >= 1; i--) {
-      const oldPath = `${filePath}.backup.${i}`;
-      const newPath = `${filePath}.backup.${i + 1}`;
-      if (existsSync(oldPath)) {
-        renameSync(oldPath, newPath);
+      try {
+        await rename(`${filePath}.backup.${i}`, `${filePath}.backup.${i + 1}`);
+      } catch (e) {
+        if (e.code !== 'ENOENT') throw e;
       }
     }
-    // 当前文件备份为 .backup.1
-    if (existsSync(filePath)) {
-      renameSync(filePath, `${filePath}.backup.1`);
-    }
+    // 保存替换前的有效版本，而不是把刚写好的正式文件移走。
+    await writeAtomic(`${filePath}.backup.1`, raw);
   } catch (e) {
     console.warn(`[storage] 备份轮转失败 ${filePath}:`, e.message);
   }
@@ -210,21 +252,11 @@ async function saveJSON(filePath, data) {
     if (fileDir !== DATA_DIR && !existsSync(fileDir)) {
       mkdirSync(fileDir, { recursive: true });
     }
-    const tmpFile = `${filePath}.tmp.${Date.now()}`;
-    try {
-      // 原子写入：先写临时文件，再重命名覆盖目标文件
-      await writeFile(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
-      // 修复：先执行原子 rename，成功后再做备份轮转
-      // （原代码先 rotate 再 rename，崩溃窗口内目标文件不存在）
-      await rename(tmpFile, filePath);
-      // rename 成功后，旧文件已被新内容覆盖；此时备份轮转
-      rotateBackupSync(filePath);
-    } catch (e) {
-      lastWriteError = { filePath, message: e.message, code: e.code, time: Date.now() };
-      console.error(`[storage] 写入失败 ${filePath}:`, e.message);
-      try { await rm(tmpFile, { force: true }); } catch {}
-      throw e;
-    }
+    await writeAtomic(filePath, JSON.stringify(data, null, 2), () => rotateBackup(filePath));
+  } catch (e) {
+    lastWriteError = { filePath, message: e.message, code: e.code, time: Date.now() };
+    console.error(`[storage] 写入失败 ${filePath}:`, e.message);
+    throw e;
   } finally {
     release();
   }
@@ -403,11 +435,7 @@ async function flushDocumentsSave() {
   if (NO_PERSIST) return;
   const projectId = currentProjectId;
   if (!projectId) return;
-  try {
-    await runDocumentsSave(projectId);
-  } catch (e) {
-    console.error(`[storage] flush documents 失败:`, e.message);
-  }
+  await runDocumentsSave(projectId);
 }
 
 /**
@@ -421,11 +449,7 @@ async function flushIdeasSave() {
   if (NO_PERSIST) return;
   const projectId = currentProjectId;
   if (!projectId) return;
-  try {
-    await runIdeasSave(projectId);
-  } catch (e) {
-    console.error(`[storage] flush ideas 失败:`, e.message);
-  }
+  await runIdeasSave(projectId);
 }
 
 /**
@@ -439,11 +463,7 @@ async function flushGraphSave() {
   if (NO_PERSIST) return;
   const projectId = currentProjectId;
   if (!projectId || !graphTarget) return;
-  try {
-    await runGraphSave(projectId, graphTarget);
-  } catch (e) {
-    console.error(`[storage] flush graph 失败:`, e.message);
-  }
+  await runGraphSave(projectId, graphTarget);
 }
 
 /**
@@ -758,7 +778,6 @@ export async function deleteProject(id) {
     }
 
     const filtered = projects.filter(p => p.id !== id);
-    await saveProjects(filtered);
 
     // 如果删除的是当前项目，先切换到其他项目（flush 保存到当前项目），然后再删除目录。
     // 这样避免 switchProjectCore 内部的 flush 通过 ensureDataDir() 重新创建已删除的项目目录。
@@ -771,24 +790,13 @@ export async function deleteProject(id) {
       }
       const switchResult = await switchProjectCore(filtered[0].id);
       if (switchResult.error) {
-        // 切换失败（如加载新项目数据异常），强制 flush 并清理定时器和内存数据后手动切换
-        await flushDocumentsSave();
-        await flushIdeasSave();
-        await flushGraphSave();
-        documentsMap.clear();
-        ideasMap.clear();
-        currentProjectId = filtered[0].id;
-        lastUsedProjectId = filtered[0].id;
-        storage.taskProgress = { taskId: null, status: 'idle', stage: '', percent: 0, log: '' };
-        storage.building = false;
-        try {
-          await loadProjectData(filtered[0].id);
-        } catch (loadErr) {
-          console.error('[storage] 强制切换后加载项目数据失败:', loadErr.message);
-          setGraph({ nodes: [], edges: [], stats: {} });
-        }
+        // 保留原项目、目录及内存数据，不能强制切入无法恢复的空项目。
+        return switchResult;
       }
     }
+
+    // 切换成功后才从目录移除旧项目，失败时仍可继续使用并备份原数据。
+    await saveProjects(filtered);
 
     // 删除项目数据目录（此时 currentProjectId 已指向其他项目，不会通过 ensureDataDir() 重新创建目录）
     const projDir = join(DATA_DIR, id);
@@ -869,9 +877,13 @@ async function switchProjectCore(projectId) {
   }
 
   // 刷新当前项目的待保存数据（确保写入旧项目文件，并等待正在执行的保存完成）
-  await flushDocumentsSave();
-  await flushIdeasSave();
-  await flushGraphSave();
+  try {
+    await flushDocumentsSave();
+    await flushIdeasSave();
+    await flushGraphSave();
+  } catch (e) {
+    return { error: '保存当前项目失败，未切换项目: ' + e.message };
+  }
 
   // 修复：清理向量库缓存，避免旧项目的向量串到新项目
   try {
@@ -891,15 +903,14 @@ async function switchProjectCore(projectId) {
   currentProjectId = projectId;
   // 记忆上次使用的项目，重启后恢复到该项目
   lastUsedProjectId = projectId;
-  project.updatedAt = Date.now();
-  await saveProjects(projects);
-
-  // 确保新项目目录存在
-  ensureDataDir();
 
   // 加载新项目数据到内存（失败时回滚 currentProjectId 并重新加载原项目数据）
   try {
+    ensureDataDir();
     await loadProjectData(projectId);
+    // 数据可用后才持久化启动项目；加载失败不能使下次启动指向损坏项目。
+    project.updatedAt = Date.now();
+    await saveProjects(projects);
   } catch (e) {
     console.error('[storage] 加载项目数据失败，回滚 currentProjectId:', e.message);
     // 失效项目缓存，确保下次 loadProjects 从磁盘读取最新数据
@@ -1229,14 +1240,8 @@ async function initialize() {
     await saveProjects(projects);
   }
 
-  // 加载当前项目数据
-  try {
-    await loadProjectData(currentProjectId);
-  } catch (e) {
-    console.error('[storage] 加载项目数据失败:', e.message);
-    // 使用空数据作为回退
-    setGraph({ nodes: [], edges: [], stats: {} });
-  }
+  // 无法恢复已有文件时停止初始化，不能用空数据替代后继续保存。
+  await loadProjectData(currentProjectId);
 
   const currentProject = projects.find(p => p.id === currentProjectId) || projects[0];
   console.log(`[storage] 初始化完成，当前项目: ${currentProject.name} (${currentProjectId})`);

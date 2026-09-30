@@ -255,6 +255,7 @@ import { drag } from 'd3-drag'
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from 'd3-force'
 import { useGraphStore, useDocsStore, useUiStore } from '../stores'
 import { graphApi, settingsApi } from '../api/client'
+import { restoreNodeVisibility } from '../utils/graph-visibility.mjs'
 
 const graphStore = useGraphStore()
 const docsStore = useDocsStore()
@@ -617,6 +618,8 @@ function buildGraph() {
 
   // Merge enter + update
   nodeSel = nodeEnter.merge(nodeSel)
+  // A rapid redraw can interrupt enter/exit fades; restore every retained node.
+  restoreNodeVisibility(nodeSel)
 
   // --- Drag ---
   nodeSel.call(
@@ -768,6 +771,8 @@ function updateGraphVisibility() {
 
   nodeEnter.transition().duration(350).attr('opacity', 1)
   nodeSel = nodeEnter.merge(nodeSel)
+  // A rapid redraw can interrupt enter/exit fades; restore every retained node.
+  restoreNodeVisibility(nodeSel)
 
   // Re-bind interactions on merged selection
   nodeSel
