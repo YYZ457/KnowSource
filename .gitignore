@@ -12,6 +12,7 @@ release-build/
 
 # User data (runtime generated)
 data/
+runtime-assets/
 
 # Debug output
 debug-output-build/

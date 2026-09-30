@@ -11,15 +11,16 @@
         <select
           v-model="selectedProjectId"
           class="file-explorer__select"
+          :disabled="importing || graphStore.building || switchingProject"
           @change="onProjectChange"
         >
-          <option :value="null">全部文档</option>
+          <option :value="null" disabled>选择项目</option>
           <option v-for="p in projectStore.projects" :key="p.id" :value="p.id">
             {{ p.name }}
           </option>
         </select>
       </div>
-      <button class="btn btn--primary btn--sm" @click="onImport" :disabled="importing">
+      <button class="btn btn--primary btn--sm" @click="onImport" :disabled="importing || graphStore.building || switchingProject">
         <span v-if="importing" class="spinner"></span>
         <svg v-else viewBox="0 0 24 24" fill="none" width="14" height="14">
           <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -34,6 +35,29 @@
         @change="handleFileInput"
       />
     </div>
+
+    <div class="import-guide">导入 → 阅读 → AI 提炼 / 图谱<br><span>单文件 {{ hostedTrial ? '10' : '50' }} MB 内，每批合计 50 MB 内</span></div>
+    <section v-if="queue.length" class="import-queue" aria-label="文献导入队列">
+      <button class="queue-heading" @click="queueExpanded = !queueExpanded" :aria-expanded="queueExpanded"><strong>导入队列 · {{ completedCount }}/{{ queue.length }} 完成</strong><span>{{ queueExpanded ? '收起' : '展开' }}</span></button>
+      <template v-if="queueExpanded">
+        <div class="queue-actions">
+          <button v-if="docsStore.importing && !docsStore.queuePaused" class="btn btn--sm" :disabled="queueActionPending" @click="controlQueue('pause')">暂停</button>
+          <button v-if="docsStore.importing && docsStore.queuePaused" class="btn btn--sm" :disabled="queueActionPending" @click="controlQueue('resume')">继续</button>
+          <button v-if="docsStore.importing" class="btn btn--sm" :disabled="queueActionPending" @click="controlQueue('cancel')">停止</button>
+          <button v-if="failedCount && !importing" class="btn btn--sm" :disabled="graphStore.building || switchingProject || queueActionPending" @click="retryFailed">重试失败项（{{ failedCount }}）</button>
+        </div>
+        <p v-if="docsStore.importing" class="queue-help">{{ docsStore.queuePaused ? '已请求暂停；PDF 在页间暂停，其他格式在下一文件前暂停。' : '暂停将在 PDF 页间或下一文件前生效。' }}</p>
+        <ul class="queue-list">
+          <li v-for="item in queue" :key="item.id" class="queue-item" :class="{ 'queue-item--failed': item.status === 'failed' }">
+            <div class="queue-item-title"><span :title="item.name">{{ item.name }}</span><span>{{ queueStatus(item.status) }}</span></div>
+            <div v-if="item.status === 'running'" class="doc-item__progress"><div class="progress-bar"><div class="progress-bar__fill" :style="{ width: queuePercent(item) + '%' }"></div></div><span class="doc-item__progress-text">{{ queuePercent(item) }}%</span></div>
+            <p v-if="item.error" class="queue-error">{{ item.error }}</p>
+            <p v-else-if="item.detail" class="queue-help">{{ item.detail }}</p>
+          </li>
+        </ul>
+      </template>
+    </section>
+    <button v-if="docsStore.selectedDocId" class="btn btn--sm agent-read" @click="openAgent">交给 Agent 精读当前文献 →</button>
 
     <!-- 文档列表 -->
     <div class="panel__body file-explorer__body">
@@ -81,21 +105,12 @@
               <span class="doc-item__ext">{{ getExt(doc).toUpperCase() || 'FILE' }}</span>
               <span v-if="doc.size != null" class="doc-item__size">{{ formatSize(doc.size) }}</span>
             </div>
-            <!-- 解析进度条 -->
-            <div v-if="getParsePercent(doc.id) != null" class="doc-item__progress">
-              <div class="progress-bar">
-                <div
-                  class="progress-bar__fill"
-                  :style="{ width: getParsePercent(doc.id) + '%' }"
-                ></div>
-              </div>
-              <span class="doc-item__progress-text">{{ Math.round(getParsePercent(doc.id)) }}%</span>
-            </div>
           </div>
 
           <button
             class="doc-item__delete icon-btn"
             title="删除文档"
+            :disabled="importing || graphStore.building || switchingProject"
             @click.stop="onDelete(doc)"
           >
             <svg viewBox="0 0 24 24" fill="none" width="15" height="15">
@@ -110,9 +125,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useDocsStore, useProjectStore, useUiStore, useGraphStore, useIdeaStore } from '../stores'
-import { parseApi } from '../api/client'
 
 const docsStore = useDocsStore()
 const projectStore = useProjectStore()
@@ -121,8 +135,38 @@ const graphStore = useGraphStore()
 const ideaStore = useIdeaStore()
 
 const fileInput = ref(null)
-const importing = ref(false)
+const preparingFiles = ref(false)
+const importing = computed(() => preparingFiles.value || docsStore.importing)
 const selectedProjectId = ref(null)
+const switchingProject = ref(false)
+const hostedTrial = Boolean(window.__KS_HOSTED_TRIAL__)
+const queueExpanded = ref(true)
+const queueActionPending = ref(false)
+const queue = computed(() => docsStore.importQueue || [])
+const completedCount = computed(() => queue.value.filter(item => item.status === 'completed').length)
+const failedCount = computed(() => queue.value.filter(item => item.status === 'failed').length)
+const MAX_FILE_SIZE = (hostedTrial ? 10 : 50) * 1024 * 1024
+const MAX_BATCH_SIZE = 50 * 1024 * 1024
+watch(() => projectStore.currentProject?.id, id => { selectedProjectId.value = id || null }, { immediate: true })
+
+function queueStatus(status) { return ({ queued: '排队中', running: '解析中', completed: '已完成', failed: '失败', cancelled: '已停止' })[status] || status }
+function queuePercent(item) { return Math.max(0, Math.min(100, Math.round(Number(item.percent) || 0))) }
+async function controlQueue(action) {
+  queueActionPending.value = true
+  try { await docsStore[{ pause: 'pauseImport', resume: 'resumeImport', cancel: 'cancelImport' }[action]]() }
+  catch (e) { uiStore.toast('队列操作失败：' + (e.message || e), 'error') }
+  finally { queueActionPending.value = false }
+}
+async function retryFailed() {
+  if (importing.value || graphStore.building || switchingProject.value) return
+  try { reportImport(await docsStore.retryFailed()) }
+  catch (e) { uiStore.toast('重试失败：' + (e.message || e), 'error') }
+}
+function reportImport(results) {
+  const failed = failedCount.value
+  const stopped = queue.value.filter(item => item.status === 'cancelled').length
+  uiStore.toast(`本次导入完成 ${results.length} 个${failed ? `，失败 ${failed} 个（可重试）` : ''}${stopped ? `，已停止 ${stopped} 个` : ''}`, failed ? 'warn' : 'success')
+}
 
 // ===== 文件类型映射 =====
 const TYPE_META = {
@@ -164,8 +208,6 @@ function formatSize(bytes) {
 
 // ===== 解析状态 =====
 function getStatus(doc) {
-  // 优先读取实时的解析进度
-  if (docsStore.parseProgress[doc.id] != null) return 'parsing'
   const s = doc.status || doc.parseStatus || doc.parsed || 'none'
   if (s === true) return 'parsed'
   if (s === false) return 'none'
@@ -198,66 +240,40 @@ function parseStatusTag(doc) {
   return STATUS_TAG[getStatus(doc)] || 'tag--cyan'
 }
 
-function getParsePercent(docId) {
-  const p = docsStore.parseProgress[docId]
-  if (p == null) return null
-  if (typeof p === 'number') return p
-  return p.percent ?? p.progress ?? null
-}
-
-// ===== 解析进度轮询 =====
-let pollTimer = null
-const pollRetries = {} // 记录每个文档的连续轮询次数，超过上限则停止
-const MAX_POLL_RETRIES = 200 // 200 × 1.5s = 5 分钟超时
-
-async function pollProgress() {
-  const parsingDocs = docsStore.documents.filter(d => getStatus(d) === 'parsing')
-  if (parsingDocs.length === 0) return
-  for (const doc of parsingDocs) {
-    // 超过最大轮询次数，停止轮询该文档并刷新列表
-    pollRetries[doc.id] = (pollRetries[doc.id] || 0) + 1
-    if (pollRetries[doc.id] > MAX_POLL_RETRIES) {
-      delete pollRetries[doc.id]
-      delete docsStore.parseProgress[doc.id]
-      await docsStore.load()
-      uiStore.toast(`文档「${doc.name}」解析超时，请重试`, 'error')
-      continue
-    }
-    try {
-      const result = await parseApi.getProgress(doc.id)
-      const percent = typeof result === 'number' ? result : (result?.percent ?? result?.progress)
-      if (percent != null) {
-        docsStore.parseProgress[doc.id] = percent
-      }
-      // 解析完成则清理进度并刷新列表
-      if (percent >= 100 || result?.status === 'done' || result?.status === 'completed') {
-        delete pollRetries[doc.id]
-        delete docsStore.parseProgress[doc.id]
-        await docsStore.load()
-      }
-    } catch (e) {
-      /* 静默忽略轮询错误 */
-    }
-  }
-}
-
 // ===== 交互 =====
+function closeMobilePanel() {
+  if (window.matchMedia('(max-width: 900px)').matches) uiStore.leftPanelVisible = false
+}
 function onDocClick(doc) {
   docsStore.selectDoc(doc.id)
+  closeMobilePanel()
+}
+function openAgent() {
+  uiStore.agentEntry = {
+    docId: docsStore.selectedDocId,
+    prompt: '精读这篇文献，梳理研究问题、方法、结论、局限与原文依据。',
+  }
+  uiStore.setView('agent')
+  closeMobilePanel()
 }
 
 async function onProjectChange() {
-  if (selectedProjectId.value != null) {
-    await projectStore.switchTo(selectedProjectId.value)
+  const previousId = projectStore.currentProject?.id || null
+  const nextId = selectedProjectId.value
+  if (!nextId || nextId === previousId || importing.value || graphStore.building) {
+    selectedProjectId.value = previousId
+    return
   }
-  // 重置所有依赖项目的状态
-  docsStore.selectDoc(null)
-  graphStore.selectedNode = null
-  await Promise.all([
-    docsStore.load(),
-    graphStore.loadGraph(),
-    ideaStore.load(),
-  ]).catch(() => {})
+  switchingProject.value = true
+  try {
+    await projectStore.switchTo(nextId)
+    docsStore.selectDoc(null)
+    graphStore.selectedNode = null
+    await Promise.all([docsStore.load(), graphStore.loadGraph(), ideaStore.load()])
+  } catch (e) {
+    selectedProjectId.value = projectStore.currentProject?.id || previousId
+    uiStore.toast('切换项目失败：' + (e.message || e), 'error')
+  } finally { switchingProject.value = false }
 }
 
 // ===== 文件导入辅助 =====
@@ -288,9 +304,11 @@ function arrayBufferToBase64(buffer) {
 }
 
 async function onImport() {
+  if (importing.value || graphStore.building || switchingProject.value) return
+  const importProjectId = projectStore.currentProject?.id
   const isElectron = typeof window !== 'undefined' && window.KSElectron
   if (isElectron && typeof window.KSElectron.openFileDialog === 'function') {
-    importing.value = true
+    preparingFiles.value = true
     try {
       const result = await window.KSElectron.openFileDialog({
         properties: ['openFile', 'multiSelections'],
@@ -301,24 +319,25 @@ async function onImport() {
       })
       if (result && !result.canceled && result.filePaths?.length) {
         const files = []
+        let totalBytes = 0
         for (const fp of result.filePaths) {
           const buffer = await window.KSElectron.readFile(fp)
           const name = fp.split(/[\\/]/).pop()
+          const bytes = buffer.byteLength ?? buffer.length ?? 0
+          if (bytes > MAX_FILE_SIZE) throw new Error(`文件「${name}」超过单文件 ${hostedTrial ? 10 : 50} MB 限制，请缩小后重新选择`)
+          totalBytes += bytes
+          if (totalBytes > MAX_BATCH_SIZE) throw new Error('本批文件合计超过 50 MB，请分批选择；本批尚未导入')
           files.push({ name, content: arrayBufferToBase64(buffer), type: getFileType(name) })
         }
+        if (projectStore.currentProject?.id !== importProjectId) throw new Error('准备文件期间项目已切换，请在目标项目重新导入')
+        queueExpanded.value = true
         const results = await docsStore.importFiles(files)
-        const successCount = results.length
-        const failCount = files.length - successCount
-        if (failCount > 0) {
-          uiStore.toast(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'error')
-        } else {
-          uiStore.toast(`已导入 ${successCount} 个文档`, 'success')
-        }
+        reportImport(results)
       }
     } catch (e) {
       uiStore.toast('导入失败: ' + (e.message || e), 'error')
     } finally {
-      importing.value = false
+      preparingFiles.value = false
     }
   } else {
     fileInput.value && fileInput.value.click()
@@ -328,31 +347,26 @@ async function onImport() {
 async function handleFileInput(event) {
   const files = Array.from(event.target.files || [])
   if (files.length === 0) return
-  const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB，与 Electron 模式一致
-  importing.value = true
+  if (importing.value || graphStore.building || switchingProject.value) { event.target.value = ''; return }
+  const importProjectId = projectStore.currentProject?.id
+  preparingFiles.value = true
   try {
+    const oversized = files.find(f => f.size > MAX_FILE_SIZE)
+    if (oversized) throw new Error(`文件「${oversized.name}」超过单文件 ${hostedTrial ? 10 : 50} MB 限制，请重新选择`)
+    if (files.reduce((sum, f) => sum + f.size, 0) > MAX_BATCH_SIZE) throw new Error('本批文件合计超过 50 MB，请分批选择；本批尚未导入')
     const fileObjs = []
     for (const f of files) {
-      if (f.size > MAX_FILE_SIZE) {
-        uiStore.toast(`文件「${f.name}」超过 50MB 限制，已跳过`, 'error')
-        continue
-      }
       const buffer = await f.arrayBuffer()
       fileObjs.push({ name: f.name, content: arrayBufferToBase64(buffer), type: getFileType(f.name) })
     }
     if (fileObjs.length === 0) return
-    const results = await docsStore.importFiles(fileObjs)
-    const successCount = results.length
-    const failCount = fileObjs.length - successCount
-    if (failCount > 0) {
-      uiStore.toast(`导入完成：成功 ${successCount} 个，失败 ${failCount} 个`, 'error')
-    } else {
-      uiStore.toast(`已导入 ${successCount} 个文档`, 'success')
-    }
+    if (projectStore.currentProject?.id !== importProjectId) throw new Error('准备文件期间项目已切换，请在目标项目重新导入')
+    queueExpanded.value = true
+    reportImport(await docsStore.importFiles(fileObjs))
   } catch (e) {
     uiStore.toast('导入失败: ' + (e.message || e), 'error')
   } finally {
-    importing.value = false
+    preparingFiles.value = false
     event.target.value = ''
   }
 }
@@ -364,6 +378,7 @@ function onDelete(doc) {
     confirmText: '删除',
     onConfirm: async () => {
       try {
+        if (importing.value || graphStore.building || switchingProject.value) throw new Error('请等待当前导入或图谱任务完成后再删除')
         await docsStore.removeDoc(doc.id)
         uiStore.toast('文档已删除', 'success')
       } catch (e) {
@@ -375,19 +390,29 @@ function onDelete(doc) {
 
 // ===== 生命周期 =====
 onMounted(async () => {
-  await Promise.all([docsStore.load(), projectStore.load()])
-  if (projectStore.currentProject) {
-    selectedProjectId.value = projectStore.currentProject.id
-  }
-  pollTimer = setInterval(pollProgress, 1500)
-})
-
-onBeforeUnmount(() => {
-  if (pollTimer) clearInterval(pollTimer)
+  try { await Promise.all([docsStore.load(), projectStore.load()]) }
+  catch (e) { uiStore.toast('文献列表加载失败：' + (e.message || e), 'error') }
 })
 </script>
 
 <style scoped>
+.import-guide { padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 12px; line-height: 1.7; }
+.import-guide span { color: var(--text-3); font-size: 11px; }
+.import-queue { flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--bg-input); }
+.queue-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; background: none; border: none; color: var(--text); cursor: pointer; text-align: left; font-size: 12px; }
+.queue-heading > span { color: var(--text-3); font-size: 11px; }
+.queue-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 10px 6px; }
+.queue-help { font-size: 11px; line-height: 1.5; color: var(--text-3); margin: 3px 0; overflow-wrap: anywhere; }
+.import-queue > .queue-help { padding: 0 12px; }
+.queue-list { list-style: none; padding: 0 8px 6px; max-height: min(220px, 30vh); overflow-y: auto; }
+.queue-item { padding: 8px 4px; border-top: 1px solid var(--border); }
+.queue-item-title { display: flex; gap: 8px; font-size: 11px; }
+.queue-item-title > span:first-child { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.queue-item-title > span:last-child { flex-shrink: 0; color: var(--text-3); }
+.queue-error { color: var(--rose); overflow-wrap: anywhere; font-size: 11px; line-height: 1.6; margin: 4px 0 0; }
+.queue-item--failed .queue-item-title > span:last-child { color: var(--rose); }
+.agent-read { margin: 8px 10px; flex-shrink: 0; white-space: normal; }
+@media (hover: none) { .doc-item .doc-item__delete { opacity: 1; } }
 .file-explorer {
   display: flex;
   flex-direction: column;

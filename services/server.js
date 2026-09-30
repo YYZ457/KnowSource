@@ -4,6 +4,9 @@
 import http from 'node:http';
 import { handleHttpRequest } from './api/router.js';
 import { initPromptStore } from './api/handlers/prompts.js';
+import { installHostedFetchGuard } from './hosted-policy.js';
+
+installHostedFetchGuard();
 
 // 启动时加载用户提示词覆盖与任务禁用列表
 try { initPromptStore(); } catch (e) { console.warn('[server] 加载提示词覆盖失败:', e.message); }
@@ -26,6 +29,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[知源] 后端服务已启动: http://127.0.0.1:${PORT}`);
+  if (process.send) process.send({ type: 'ready', port: server.address().port });
 });
 
 // HTTP 服务器超时设置

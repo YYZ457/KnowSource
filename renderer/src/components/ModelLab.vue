@@ -12,15 +12,18 @@
         <span class="tag" :class="statusTagClass">{{ statusLabel }}</span>
       </div>
       <div class="panel__body">
+        <div class="model-current"><span>当前用于研究与 Agent</span><strong>{{ activeLabel }}</strong><span class="hint">{{ activeConfig?.hasApiKey ? '凭证已保存在当前服务会话，留空可继续使用。' : '保存后才会切换实际使用的模型。' }}</span></div>
+        <div v-if="hostedTrial" class="model-notice">这是云端体验版：支持下列官方云端接口。本机 Ollama 和任意自定义服务器请在桌面版使用；云端无法访问你电脑的 localhost。</div>
+        <ol class="setup-steps"><li>选择服务</li><li>填写模型与凭证</li><li>测试连接</li><li>保存用于研究</li></ol>
         <!-- Provider 选择 -->
         <div class="field">
           <label>服务商 Provider</label>
-          <select v-model="modelStore.config.provider" @change="onProviderChange">
-            <option v-for="p in providers" :key="p.key" :value="p.key">{{ p.label }}</option>
+          <select v-model="modelStore.config.provider" :disabled="saving || modelStore.testing" @change="onProviderChange">
+            <option v-for="p in providers" :key="p.key" :value="p.key" :disabled="hostedTrial && p.key === 'ollama'">{{ p.label }}{{ hostedTrial && p.key === 'ollama' ? ' · 仅桌面版' : '' }}</option>
           </select>
           <div class="hint">{{ providerHint }}</div>
           <!-- Ollama 检测状态 -->
-          <div v-if="modelStore.config.provider === 'ollama'" class="ollama-status">
+          <div v-if="modelStore.config.provider === 'ollama' && !hostedTrial" class="ollama-status">
             <span v-if="ollamaDetecting" class="hint">正在检测 Ollama 服务...</span>
             <span v-else-if="ollamaDetected" class="hint" style="color: var(--green-6)">
               Ollama 已连接 · {{ ollamaModels.length }} 个模型可用
@@ -40,6 +43,7 @@
             <input
               type="text"
               v-model="modelStore.config.model"
+              :disabled="saving || modelStore.testing"
               list="ks-model-suggestions"
               :placeholder="modelStore.config.provider === 'ollama' ? '从下拉列表选择或手动输入' : '例如 gpt-4o-mini'"
               autocomplete="off"
@@ -52,12 +56,14 @@
           <!-- API Key -->
           <div class="field">
             <label>API Key</label>
-            <input
-              type="password"
+            <div class="key-field"><input
+              :type="showKey ? 'text' : 'password'"
               v-model="modelStore.config.apiKey"
               :placeholder="apiKeyPlaceholder"
               autocomplete="new-password"
-            />
+              :disabled="saving || modelStore.testing || ['stub', 'ollama'].includes(modelStore.config.provider)"
+            /><button class="btn" type="button" @click="showKey = !showKey" :aria-label="showKey ? '隐藏 API Key' : '显示 API Key'">{{ showKey ? '隐藏' : '显示' }}</button></div>
+            <div class="hint">{{ canReuseKey ? '当前服务已有凭证，留空保留；填写新 Key 会替换。' : '密钥只用于你选择的模型接口；不要填入密码。' }}</div>
           </div>
         </div>
 
@@ -67,20 +73,23 @@
           <input
             type="text"
             v-model="modelStore.config.baseUrl"
+            :disabled="saving || modelStore.testing || modelStore.config.provider === 'stub'"
             placeholder="https://api.openai.com/v1"
             spellcheck="false"
           />
-          <div class="hint">OpenAI 兼容接口地址，切换服务商时自动填充，可手动修改。</div>
+          <div class="hint">{{ hostedTrial ? '云端体验仅接受支持列表中的官方 HTTPS 地址。' : 'OpenAI 兼容接口填写基础地址（通常以 /v1 结尾），不要填写 /chat/completions。' }}</div>
         </div>
+        <label class="sync-choice"><input type="checkbox" v-model="syncKG" :disabled="saving || modelStore.testing" />文献提炼、图谱构建与 Agent 共用此模型</label>
+        <p class="hint">测试会发送一次简短请求，可能消耗服务商额度。测试成功不会自动保存。关闭共用后，图谱保持原来的模型设置。</p>
 
         <!-- 操作按钮 -->
         <div class="actions">
-          <button class="btn btn--primary" :disabled="modelStore.testing || !canTest" @click="onTest">
+          <button class="btn btn--primary" :disabled="saving || modelStore.testing || !canTest" @click="onTest">
             <span v-if="modelStore.testing" class="spinner"></span>
             <span>{{ modelStore.testing ? '测试中...' : '测试连接' }}</span>
           </button>
-          <button class="btn" :disabled="saving" @click="onSave">
-            {{ saving ? '保存中...' : '保存配置' }}
+          <button class="btn" :disabled="saving || modelStore.testing || !canTest" @click="onSave">
+            {{ saving ? '保存中...' : '保存用于研究' }}
           </button>
         </div>
 
@@ -93,7 +102,7 @@
           >
             <div class="test-result__head">
               <span class="dot" :class="modelStore.testResult.success ? 'dot--ok' : 'dot--err'"></span>
-              <strong>{{ modelStore.testResult.success ? '连接成功' : '连接失败' }}</strong>
+              <strong>{{ modelStore.testResult.success ? (modelStore.config.provider === 'stub' ? '模拟模式可用（未连接 AI）' : '连接成功 · 尚需保存') : '连接失败' }}</strong>
               <span v-if="modelStore.testResult.success" class="hint">响应预览：</span>
             </div>
             <pre class="test-result__body">{{ resultPreview }}</pre>
@@ -115,6 +124,21 @@ defineProps({
 
 const modelStore = useModelStore()
 const uiStore = useUiStore()
+const hostedTrial = Boolean(window.__KS_HOSTED_TRIAL__)
+const showKey = ref(false)
+const syncKG = ref(true)
+const activeConfig = ref(null)
+const activeLoadError = ref(false)
+const activeLabel = computed(() => {
+  const c = activeConfig.value
+  if (!c) return activeLoadError.value ? '暂时无法读取，请刷新设置后再试' : '正在读取当前配置…'
+  if (!c.provider || c.provider === 'stub') return '未接入真实模型 · 当前为模拟模式'
+  return `${PROVIDERS[c.vendor || c.provider]?.label || c.vendor || c.provider} · ${c.model || '未填写模型'}`
+})
+function endpointIdentity(c) {
+  return `${c.provider === 'openai-compatible' ? c.vendor || 'openai' : c.provider}|${String(c.baseUrl || '').trim().replace(/\/+$/, '')}`
+}
+const canReuseKey = computed(() => Boolean(activeConfig.value?.hasApiKey && endpointIdentity(activeConfig.value) === endpointIdentity(modelStore.config)))
 
 // ===== Ollama 动态模型检测 =====
 const ollamaModels = ref([])       // 从 Ollama API 获取的已安装模型列表
@@ -122,11 +146,12 @@ const ollamaDetecting = ref(false) // 检测状态
 const ollamaDetected = ref(false)  // 是否已检测到 Ollama
 
 async function detectOllamaModels() {
-  if (modelStore.config.provider !== 'ollama') return
+  if (hostedTrial || modelStore.config.provider !== 'ollama') return
   ollamaDetecting.value = true
   try {
-    const resp = await settingsApi.getOllamaStatus()
-    if (resp.success && resp.available) {
+    const resp = await settingsApi.getOllamaStatus({ baseUrl: modelStore.config.baseUrl, tryStart: false })
+    if (modelStore.config.provider !== 'ollama') return
+    if (resp.success && (resp.available || resp.running)) {
       ollamaDetected.value = true
       // resp.models 格式: [{ name: 'qwen2.5:1.5b', size: '...'}, ...]
       const installed = (resp.models || []).map(m => m.name || m)
@@ -239,6 +264,8 @@ const apiKeyPlaceholder = computed(() => {
   const p = modelStore.config.provider
   if (p === 'stub') return '本地模拟，无需 API Key'
   if (p === 'ollama') return '本地服务，无需 API Key'
+  if (canReuseKey.value) return '留空使用已保存的凭证'
+  if (p === 'custom' && !hostedTrial) return '本地无认证接口可留空'
   return 'sk-...'
 })
 
@@ -247,28 +274,31 @@ const statusLabel = computed(() => {
   const { provider, model, apiKey } = modelStore.config
   if (provider === 'stub') return '模拟模式'
   if (!model) return '未配置'
-  if (provider !== 'ollama' && !apiKey) return '缺少 Key'
-  return '就绪'
+  if (provider !== 'ollama' && !(provider === 'custom' && !hostedTrial) && !apiKey && !canReuseKey.value) return '缺少 Key'
+  return '待测试 / 保存'
 })
 const statusTagClass = computed(() => {
   const { provider, model, apiKey } = modelStore.config
   if (provider === 'stub') return 'tag--violet'
-  if (!model || (provider !== 'ollama' && !apiKey)) return 'tag--rose'
+  if (!model || (provider !== 'ollama' && !(provider === 'custom' && !hostedTrial) && !apiKey && !canReuseKey.value)) return 'tag--rose'
   return 'tag--emerald'
 })
 
 const canTest = computed(() => {
   const { provider, model, apiKey } = modelStore.config
   if (provider === 'stub') return true
-  if (provider === 'ollama') return !!model
+  if (provider === 'ollama') return !hostedTrial && !!model
   // 非本地服务需要同时填写 model 和 apiKey
-  return !!model && !!apiKey
+  return !!model && (!!apiKey || canReuseKey.value || (provider === 'custom' && !hostedTrial)) && !!modelStore.config.baseUrl
 })
 
 const saving = ref(false)
 
 // 切换服务商时自动填充 baseUrl，并重置不兼容的依赖字段
 function onProviderChange() {
+  modelStore.config.apiKey = ''
+  modelStore.config.hasApiKey = false
+  modelStore.config.vendor = modelStore.config.provider
   const preset = PROVIDERS[modelStore.config.provider]
   if (preset && modelStore.config.provider !== 'custom') {
     modelStore.config.baseUrl = preset.baseUrl
@@ -300,7 +330,10 @@ watch(
 )
 
 // 组件挂载时，如果当前已是 Ollama，自动检测模型
-onMounted(() => {
+watch(() => [modelStore.config.provider, modelStore.config.model, modelStore.config.baseUrl, modelStore.config.apiKey], () => { modelStore.testResult = null })
+
+onMounted(async () => {
+  try { activeConfig.value = await settingsApi.getModelConfig() } catch { activeLoadError.value = true }
   if (modelStore.config.provider === 'ollama') {
     detectOllamaModels()
   }
@@ -309,7 +342,7 @@ onMounted(() => {
 async function onTest() {
   await modelStore.test()
   if (modelStore.testResult?.success) {
-    uiStore.toast('模型连接测试成功', 'success')
+    uiStore.toast(modelStore.config.provider === 'stub' ? '模拟模式可用；使用 Agent 请接入真实模型' : '模型连接测试成功，请保存后使用', 'success')
   } else {
     uiStore.toast('连接失败：' + (modelStore.testResult?.message || '未知错误'), 'error')
   }
@@ -323,8 +356,13 @@ async function onSave() {
   }
   saving.value = true
   try {
-    await modelStore.save()
-    uiStore.toast('模型配置已保存', 'success')
+    const result = await modelStore.save({ syncKG: syncKG.value })
+    if (!result?.success) throw new Error(result?.error || result?.warnings?.join('；') || '服务器未确认保存成功')
+    activeConfig.value = await settingsApi.getModelConfig()
+    modelStore.testResult = null
+    showKey.value = false
+    uiStore.toast(result.kgSynced ? '模型已用于文献、图谱与 Agent' : '研究与 Agent 模型已保存', 'success')
+    if (result.warnings?.length) uiStore.toast(result.warnings.join('；'), 'info')
   } catch (e) {
     uiStore.toast('保存失败：' + e.message, 'error')
   } finally {
@@ -344,6 +382,22 @@ const resultPreview = computed(() => {
 </script>
 
 <style scoped>
+.model-current { display: grid; gap: 5px; padding: 14px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 16px; overflow-wrap: anywhere; }
+.model-current > span:first-child { font-size: 12px; color: var(--text-2); }
+.model-current strong { font-size: 14px; }
+.model-notice { padding: 12px; border-left: 3px solid var(--blue-6); background: var(--bg-input); font-size: 12px; line-height: 1.7; margin-bottom: 14px; }
+.setup-steps { display: flex; flex-wrap: wrap; gap: 8px 22px; padding-left: 20px; margin: 0 0 18px; font-size: 12px; color: var(--text-2); }
+.key-field { display: flex; gap: 6px; min-width: 0; }
+.key-field input { flex: 1; min-width: 0; }
+.key-field button { flex-shrink: 0; }
+.sync-choice { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 14px 0 6px; line-height: 1.6; }
+.sync-choice input { width: auto; }
+@media (max-width: 640px) {
+  .model-lab .field-row { grid-template-columns: 1fr; display: grid; }
+  .actions { flex-wrap: wrap; }
+  .actions .btn { flex: 1; white-space: nowrap; }
+  .test-result__head { flex-wrap: wrap; }
+}
 .ollama-status {
   margin-top: 4px;
 }

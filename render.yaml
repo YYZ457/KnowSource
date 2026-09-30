@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: knowsource-original-trial
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install --include=dev --include=optional --package-lock=false && npm run build:web
+    startCommand: node services/web-server.js
+    healthCheckPath: /healthz
+    autoDeploy: false
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: ELECTRON_SKIP_BINARY_DOWNLOAD
+        value: "1"

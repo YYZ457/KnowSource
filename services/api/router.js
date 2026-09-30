@@ -1,7 +1,7 @@
 /** @module services/api/router
  *  职责：API 路由网关，支持 HTTP 与 IPC 双通道
  */
-import { parseHandler, getDocuments, deleteDocument, serveDocumentPdf, pauseParse, resumeParse, cancelParse } from './handlers/parse.js';
+import { parseHandler, getDocuments, deleteDocument, serveDocumentPdf, pauseParse, resumeParse, cancelParse, isParseBusy } from './handlers/parse.js';
 import { importSampleDoc } from './handlers/sample-doc.js';
 import { reorderDocuments } from './handlers/documents.js';
 import { extractHandler, modelTestHandler } from './handlers/extract.js';
@@ -12,10 +12,11 @@ import { clearAll, getClearToken } from './handlers/clear.js';
 import { matchHandler } from './handlers/match.js';
 import { searchHandler } from './handlers/search.js';
 import { listIdeas, createIdea, updateIdea, deleteIdea, recommendIdeaNodes, linkIdeaToNode, unlinkIdeaFromNode } from './handlers/idea.js';
-import { setLLMProviderHandler, getLLMProviderHandler, setKGProviderHandler, getKGProviderHandler, ollamaStatusHandler } from './handlers/settings.js';
+import { setLLMProviderHandler, getLLMProviderHandler, setKGProviderHandler, getKGProviderHandler, ollamaStatusHandler, testConnectionHandler } from './handlers/settings.js';
 import { getPromptsHandler, setPromptHandler, resetPromptHandler, setDisabledHandler, getLLMLogHandler, testPromptHandler, initPromptStore } from './handlers/prompts.js';
 import { listProjectsHandler, createProjectHandler, renameProjectHandler, updateProjectHandler, deleteProjectHandler, switchProjectHandler, exportProjectHandler, importProjectHandler } from './handlers/projects.js';
 import { storage } from '../storage.js';
+import { agentSkillsHandler, agentRunHandler, agentStatusHandler, agentConfirmHandler, agentCancelHandler, agentProjectLock } from './handlers/agent.js';
 
 // CORS 允许的开发服务器端口白名单
 // - 5173: Vite 开发服务器默认端口
@@ -27,7 +28,7 @@ const ALLOWED_DEV_PORTS = new Set(['5173', '5174', '4173', '3000', '8080']);
 // 重操作接口速率限制：每 60 秒内每个 IP 最多 N 次
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 10;
-const RATE_LIMITED_PATHS = new Set(['/parse', '/graph/build', '/graph/crosslinks/rebuild', '/match', '/search', '/extract']);
+const RATE_LIMITED_PATHS = new Set(['/parse', '/graph/build', '/graph/crosslinks/rebuild', '/match', '/search', '/extract', '/agent/run', '/agent/confirm']);
 const rateLimitMap = new Map();
 
 // Electron 环境下由主进程注入的本地 API 认证令牌，防止任意本地进程访问后端
@@ -43,6 +44,11 @@ function checkApiToken(req) {
   if (!API_TOKEN) return true;
   const headerToken = req.headers['x-knowledge-ide-token'];
   if (headerToken === API_TOKEN) return true;
+  // Only PDF resources may use the query token; iframe requests cannot set a header.
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    const url = new URL(req.url, 'http://localhost');
+    if (/^\/documents\/[^/]+\/pdf$/.test(url.pathname) && url.searchParams.get('token') === API_TOKEN) return true;
+  }
   return false;
 }
 
@@ -89,6 +95,11 @@ function isAllowedDevPort(port) {
 
 // 路由表
 const routes = [
+  { method: 'GET', path: '/agent/skills', handler: agentSkillsHandler },
+  { method: 'POST', path: '/agent/run', handler: agentRunHandler },
+  { method: 'GET', path: '/agent/status', handler: agentStatusHandler },
+  { method: 'POST', path: '/agent/confirm', handler: agentConfirmHandler },
+  { method: 'POST', path: '/agent/cancel', handler: agentCancelHandler },
   { method: 'POST', path: '/parse', handler: parseHandler },
   { method: 'POST', path: '/parse/pause', handler: pauseParse },
   { method: 'POST', path: '/parse/resume', handler: resumeParse },
@@ -118,6 +129,7 @@ const routes = [
   { method: 'POST', path: '/settings/kg', handler: setKGProviderHandler },
   { method: 'GET', path: '/settings/kg', handler: getKGProviderHandler },
   { method: 'POST', path: '/settings/ollama-status', handler: ollamaStatusHandler },
+  { method: 'POST', path: '/settings/connection-test', handler: testConnectionHandler },
   // 提示词自定义与 LLM 调用日志
   { method: 'GET', path: '/settings/prompts', handler: getPromptsHandler },
   { method: 'POST', path: '/settings/prompts', handler: setPromptHandler },
@@ -316,6 +328,17 @@ export async function handleHttpRequest(req, res) {
   const params = pathParams ? { ...body, id: pathParams[0] } : body;
 
   try {
+    const parseControls = ['/parse/pause', '/parse/resume', '/parse/cancel'];
+    if (!['GET', 'HEAD'].includes(method) && !parseControls.includes(path) && !path.startsWith('/agent/') && isParseBusy()) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '文献正在解析，请等待结束或先停止当前解析，再修改项目。' }));
+      return;
+    }
+    if (!['GET', 'HEAD'].includes(method) && !path.startsWith('/agent/') && agentProjectLock().locked) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Agent 正在处理当前项目，请等待完成或先停止 Agent，再修改资料或模型设置。' }));
+      return;
+    }
     const result = await route.handler(params);
     // 检测 handler 返回的业务错误：
     // - { success: false, error: '...' } → 400

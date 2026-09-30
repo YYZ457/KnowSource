@@ -59,15 +59,35 @@
           v-else-if="isPdf && pdfViewMode === 'render'"
           class="editor__pdf-viewer"
         >
-          <iframe
-            v-if="pdfUrl && !pdfLoadFailed"
-            :src="pdfUrl"
-            class="editor__pdf-iframe"
-            frameborder="0"
-            allowfullscreen
-          ></iframe>
+          <template v-if="!pdfLoadFailed">
+            <div v-if="pdfLoading" class="editor__loading" role="status">
+              <span class="spinner"></span>
+              <span>正在加载 PDF...</span>
+            </div>
+            <template v-if="pdfDocument">
+              <div class="editor__pdf-toolbar">
+                <button class="btn btn--sm btn--ghost" :disabled="pdfPage <= 1" @click="pdfPage--">上一页</button>
+                <span aria-live="polite">第 {{ pdfPage }} / {{ pdfPageCount }} 页</span>
+                <button class="btn btn--sm btn--ghost" :disabled="pdfPage >= pdfPageCount" @click="pdfPage++">下一页</button>
+              </div>
+              <div class="editor__pdf-page">
+                <div v-if="pdfRendering" class="editor__loading" role="status">
+                  <span class="spinner"></span>
+                  <span>正在渲染页面...</span>
+                </div>
+                <canvas
+                  :key="pdfPage"
+                  ref="pdfCanvas"
+                  class="editor__pdf-canvas"
+                  :style="{ visibility: pdfRendering ? 'hidden' : 'visible' }"
+                  role="img"
+                  :aria-label="`${docTitle}，第 ${pdfPage} 页`"
+                ></canvas>
+              </div>
+            </template>
+          </template>
           <div v-else class="editor__pdf-fallback">
-            <p>{{ pdfLoadFailed ? 'PDF 加载失败，可能是文件较大或格式异常' : 'PDF 原始文件不可用' }}</p>
+            <p>PDF 加载失败，原始文件可能缺失或格式异常</p>
             <button class="btn btn--sm" @click="pdfViewMode = 'text'">切换到文本视图</button>
             <button v-if="pdfLoadFailed" class="btn btn--sm btn--ghost" @click="retryPdfLoad">重试加载</button>
             <pre v-if="rawContent" class="editor__plain editor__plain--fallback">{{ rawContent }}</pre>
@@ -98,6 +118,8 @@
 import { ref, shallowRef, computed, watch, onMounted, nextTick } from 'vue'
 import { useDocsStore } from '../stores'
 import DOMPurify from 'dompurify'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
+import { loadPdfPreview, renderPdfPreviewPage } from '../api/pdf-preview.mjs'
 
 const docsStore = useDocsStore()
 
@@ -145,69 +167,100 @@ const isPdf = computed(() => {
   return ext === 'pdf'
 })
 
-// 构建 PDF 原始文件 URL
-// Web 模式: /api/documents/:docId/pdf (Vite 代理)
-// Electron 模式: http://127.0.0.1:{port}/documents/:docId/pdf?token=xxx
-const pdfUrl = computed(() => {
-  const doc = selectedDoc.value
-  if (!doc) return ''
-  const docId = doc.id || doc.docId
-  if (!docId) return ''
-
-  // Electron 模式
-  const isElectron = typeof window !== 'undefined' && window.KSElectron
-  if (isElectron && window.KSElectron?.env?.backendPort) {
-    const port = window.KSElectron.env.backendPort
-    const token = window.KSElectron.env.apiToken || ''
-    return `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
-  }
-  // Web 模式 — Vite 代理 /api -> 后端
-  return `/api/documents/${encodeURIComponent(docId)}/pdf`
-})
-
-// PDF 加载失败处理
+// 使用 PDF.js 画布，避免原生 PDF 插件被严格的 object-src CSP 阻止。
+// worker 来自本应用构建产物；原始文件只通过带认证请求头的 fetch 读取。
+const pdfDocument = shallowRef(null)
+const pdfCanvas = ref(null)
+const pdfPage = ref(1)
+const pdfPageCount = ref(0)
+const pdfLoading = ref(false)
+const pdfRendering = ref(false)
 const pdfLoadFailed = ref(false)
-const pdfRetryKey = ref(0) // 用于触发重试
+const pdfRetryKey = ref(0)
 
-// 预检 PDF 可达性，失败则回退到文本视图
-async function checkPdfAccessible(docId) {
-  if (!docId) return false
-  try {
-    const isElectron = typeof window !== 'undefined' && window.KSElectron
-    let checkUrl
-    if (isElectron && window.KSElectron?.env?.backendPort) {
-      const port = window.KSElectron.env.backendPort
-      const token = window.KSElectron.env.apiToken || ''
-      checkUrl = `http://127.0.0.1:${port}/documents/${encodeURIComponent(docId)}/pdf${token ? '?token=' + encodeURIComponent(token) : ''}`
-    } else {
-      checkUrl = `/api/documents/${encodeURIComponent(docId)}/pdf`
-    }
-    const resp = await fetch(checkUrl, { method: 'HEAD', signal: AbortSignal.timeout(5000) })
-    if (resp.ok || resp.status === 206) return true
-    // 403/404 等视为不可用
-    console.warn('[Editor] PDF 预检失败:', resp.status)
-    return false
-  } catch (e) {
-    console.warn('[Editor] PDF 预检异常:', e.message)
-    return false
-  }
+async function loadPdfLibrary() {
+  const [mod, { pdfResourceOptions }] = await Promise.all([
+    import('pdfjs-dist/build/pdf.js'),
+    import('../api/pdf-resources.js'),
+  ])
+  const library = mod.default || mod
+  library.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+  return { getDocument: options => library.getDocument({ ...options, ...pdfResourceOptions }) }
 }
 
 function retryPdfLoad() {
-  pdfLoadFailed.value = false
   pdfRetryKey.value++
 }
 
-// 选中文档变化时预检 PDF
-watch([() => docsStore.selectedDocId, () => pdfViewMode.value, pdfRetryKey], async ([docId, mode]) => {
-  if (docId && mode === 'render' && isPdf.value) {
-    pdfLoadFailed.value = false
-    const ok = await checkPdfAccessible(docId)
-    if (!ok) {
-      pdfLoadFailed.value = true
-    }
+// Watch cleanup also runs on unmount. Replaced requests/workers cannot overwrite
+// a newer document, and switching to text releases all PDF rendering resources.
+watch([selectedDoc, pdfViewMode, pdfRetryKey], async ([doc, mode], _, onCleanup) => {
+  const controller = new AbortController()
+  let current = true
+  let timer
+  onCleanup(() => {
+    current = false
+    clearTimeout(timer)
+    controller.abort()
+  })
+  pdfDocument.value = null
+  pdfPage.value = 1
+  pdfPageCount.value = 0
+  pdfLoadFailed.value = false
+  pdfLoading.value = false
+  if (!doc || mode !== 'render' || !isPdf.value) return
+
+  pdfLoading.value = true
+  timer = setTimeout(() => controller.abort(), 30000)
+  try {
+    const pdf = await loadPdfPreview({
+      docId: doc.id || doc.docId,
+      electronEnv: window.KSElectron?.env,
+      signal: controller.signal,
+      loadLibrary: loadPdfLibrary,
+    })
+    if (!current) return
+    pdfPageCount.value = pdf.numPages
+    pdfDocument.value = pdf
+  } catch (error) {
+    if (current) pdfLoadFailed.value = true
+  } finally {
+    clearTimeout(timer)
+    if (current) pdfLoading.value = false
   }
 }, { immediate: true })
+
+watch([pdfDocument, pdfPage, pdfCanvas], async ([pdf, pageNumber, canvas], _, onCleanup) => {
+  const controller = new AbortController()
+  let current = true
+  let timer
+  onCleanup(() => {
+    current = false
+    clearTimeout(timer)
+    controller.abort()
+  })
+  if (!pdf || !canvas) {
+    pdfRendering.value = false
+    return
+  }
+  pdfRendering.value = true
+  timer = setTimeout(() => controller.abort(), 30000)
+  try {
+    await renderPdfPreviewPage({
+      pdf,
+      pageNumber,
+      canvas,
+      width: canvas.parentElement.clientWidth || 800,
+      pixelRatio: window.devicePixelRatio || 1,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (current) pdfLoadFailed.value = true
+  } finally {
+    clearTimeout(timer)
+    if (current) pdfRendering.value = false
+  }
+}, { flush: 'post' })
 
 // 本地跟踪内容加载状态(store 内部异步获取内容,无独立标志位)
 // 切换文档时置为 true,内容到达后置为 false
@@ -510,16 +563,33 @@ watch(() => docsStore.selectedDocId, (id) => {
   display: flex;
   flex-direction: column;
 }
-.editor__pdf-iframe {
+.editor__pdf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 0 12px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.editor__pdf-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.editor__pdf-page {
   width: 100%;
-  flex: 1;
-  border: none;
-  border-radius: var(--radius-sm);
+  min-height: 200px;
+}
+.editor__pdf-canvas {
+  display: block;
+  max-width: 100%;
   background: white;
-  min-height: 600px;
+  border-radius: var(--radius-sm);
 }
 .editor__pdf-fallback {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
   align-items: center;
   justify-content: center;
   padding: 40px 20px;

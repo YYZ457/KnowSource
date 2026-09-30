@@ -14,6 +14,7 @@ export const useUiStore = defineStore('ui', () => {
   const searching = ref(false)
   const toasts = ref([])
   const confirmDialog = ref(null)
+  const agentEntry = ref(null)
 
   // 设置覆盖层状态
   const settingsOpen = ref(false)
@@ -55,7 +56,7 @@ export const useUiStore = defineStore('ui', () => {
   const graphCommand = ref(null) // { action: 'zoomIn' | 'zoomOut' | 'reset', ts: number }
   function sendGraphCommand(action) { graphCommand.value = { action, ts: Date.now() } }
 
-  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, toasts, confirmDialog, settingsOpen, settingsTab, setView, openSettings, closeSettings, toggleTheme, toast, showConfirm, closeConfirm, graphCommand, sendGraphCommand }
+  return { activeView, leftPanelVisible, rightPanelVisible, theme, searchQuery, searchResults, searchOpen, searching, toasts, confirmDialog, agentEntry, settingsOpen, settingsTab, setView, openSettings, closeSettings, toggleTheme, toast, showConfirm, closeConfirm, graphCommand, sendGraphCommand }
 })
 
 // ===== Documents Store =====
@@ -65,6 +66,12 @@ export const useDocsStore = defineStore('docs', () => {
   const selectedDocContent = ref('')
   const loading = ref(false)
   const parseProgress = ref({})
+  const importing = ref(false)
+  const importQueue = ref([])
+  const queuePaused = ref(false)
+  const retryPayloads = new Map()
+  let queueCancelled = false
+  let queueProject = null
 
   async function load() {
     loading.value = true
@@ -105,29 +112,86 @@ export const useDocsStore = defineStore('docs', () => {
   }
 
   async function parseFile(file) {
-    try {
-      const result = await parseApi.parse(file)
-      await load()
-      return result
-    } catch (e) { console.error('Parse failed:', e); throw e }
+    const results = await importFiles([file])
+    if (!results.length) throw new Error(importQueue.value[0]?.error || '文献未导入，请查看处理队列')
+    return results[0]
   }
 
   // 批量导入文件：files 为 { name, content, type } 对象数组
   async function importFiles(files) {
+    if (importing.value) throw new Error('已有导入任务，请等待完成或停止当前队列')
+    if (!files?.length) return []
+    importing.value = true
+    queuePaused.value = false
+    queueCancelled = false
+    queueProject = useProjectStore().currentProject?.id
+    retryPayloads.clear()
+    importQueue.value = files.map((f, i) => {
+      const id = `${Date.now()}-${i}`
+      retryPayloads.set(id, f)
+      return { id, name: f.name, status: 'queued', error: '', percent: 0, detail: '等待处理' }
+    })
     const results = []
-    for (const f of files) {
-      try {
-        const result = await parseApi.parse(f)
-        // 只计入成功结果（后端可能返回 {error} 而非抛异常）
-        if (result && !result.error) {
-          results.push(result)
-        } else {
-          console.error(`Parse returned error for ${f.name}:`, result?.error)
+    try {
+      for (const item of importQueue.value) {
+        while (queuePaused.value && !queueCancelled) await new Promise(resolve => setTimeout(resolve, 200))
+        if (queueCancelled || queueProject !== useProjectStore().currentProject?.id) {
+          item.status = 'cancelled'; item.detail = '未开始'; continue
         }
-      } catch (e) { console.error(`Parse failed for ${f.name}:`, e) }
+        item.status = 'running'; item.detail = '上传并提取正文'
+        let polling = false
+        const pollTimer = setInterval(async () => {
+          if (polling) return
+          polling = true
+          try {
+            const p = await parseApi.getProgress()
+            if (item.status === 'running' && /^(?:pdf-)?parse:/.test(p?.taskId || '')) {
+              parseProgress.value = p
+              item.percent = Math.max(0, Math.min(100, p.percent || 0))
+              item.detail = p.log || p.stage || '解析中'
+            }
+          } catch { /* Parsing response remains the source of completion status. */ }
+          finally { polling = false }
+        }, 1200)
+        try {
+          const result = await parseApi.parse(retryPayloads.get(item.id))
+          if (!result || result.error || result.success === false) throw new Error(result?.error || result?.message || '解析失败')
+          results.push(result); item.status = 'completed'; item.percent = 100; item.detail = '已提取正文，可阅读或交给 Agent'
+          retryPayloads.delete(item.id)
+        } catch (e) {
+          item.status = queueCancelled ? 'cancelled' : 'failed'
+          item.error = e.message || '解析失败'; item.detail = item.error
+        } finally { clearInterval(pollTimer) }
+      }
+      await load()
+      if (!selectedDocId.value && documents.value.length) selectDoc(documents.value.at(-1).id)
+    } finally {
+      importing.value = false
+      queuePaused.value = false
     }
-    await load()
     return results
+  }
+
+  async function retryFailed() {
+    if (queueProject !== useProjectStore().currentProject?.id) throw new Error('项目已改变，请在当前项目重新选择文件')
+    const files = importQueue.value.filter(i => ['failed', 'cancelled'].includes(i.status)).map(i => retryPayloads.get(i.id)).filter(Boolean)
+    return importFiles(files)
+  }
+  async function pauseImport() {
+    queuePaused.value = true
+    try { await parseApi.pause() } catch (e) {
+      // Between files there is no backend task, but the queue can still pause.
+      if (!e.message?.includes('当前没有可暂停')) { queuePaused.value = false; throw e }
+    }
+  }
+  async function resumeImport() {
+    try { await parseApi.resume() } catch (e) { if (!e.message?.includes('当前没有可恢复')) throw e }
+    queuePaused.value = false
+  }
+  async function cancelImport() {
+    queueCancelled = true
+    queuePaused.value = false
+    try { await parseApi.cancel() } catch (e) { if (!e.message?.includes('当前没有可取消')) throw e }
   }
 
   async function removeDoc(id) {
@@ -151,7 +215,7 @@ export const useDocsStore = defineStore('docs', () => {
     } catch (e) { console.error('Progress check failed:', e) }
   }
 
-  return { documents, selectedDocId, selectedDocContent, loading, parseProgress, load, selectDoc, parseFile, importFiles, removeDoc, checkProgress }
+  return { documents, selectedDocId, selectedDocContent, loading, parseProgress, importing, importQueue, queuePaused, load, selectDoc, parseFile, importFiles, retryFailed, pauseImport, resumeImport, cancelImport, removeDoc, checkProgress }
 })
 
 // ===== Graph Store =====
@@ -194,6 +258,7 @@ export const useGraphStore = defineStore('graph', () => {
       }, 1000)
 
       const result = await graphApi.build(docIds, options)
+      if (result?.success === false || result?.error) throw new Error(result.error || '图谱构建失败')
       await loadGraph()
       buildProgress.value = ''
       buildPercent.value = 100
@@ -319,20 +384,35 @@ export const usePromptStore = defineStore('prompt', () => {
 // ===== Model Store =====
 export const useModelStore = defineStore('model', () => {
   const config = ref({ provider: 'stub', model: '', apiKey: '', baseUrl: '', vendor: '' })
+  const activeConfig = ref({ provider: 'stub', model: '', hasApiKey: false })
   const testing = ref(false)
   const testResult = ref(null)
 
   async function load() {
     try {
       const data = await settingsApi.getModelConfig()
-      config.value = { ...config.value, ...data }
+      if (data?.success === false || data?.error) throw new Error(data.error || '读取模型设置失败')
+      activeConfig.value = { ...data }
+      config.value = { ...data, provider: data.provider === 'openai-compatible' ? (data.vendor || 'openai-compatible') : data.provider, apiKey: '' }
     } catch (e) { console.error('Load model config failed:', e) }
   }
 
-  async function save() {
-    try {
-      await settingsApi.saveModelConfig(config.value)
-    } catch (e) { console.error('Save model config failed:', e); throw e }
+  async function save({ syncKG = false } = {}) {
+    const snapshot = { ...config.value }
+    const result = await settingsApi.saveModelConfig(snapshot)
+    if (result?.success === false || result?.error) throw new Error(result.error || result.message || result.warnings?.join('；') || '模型设置未保存')
+    const warnings = [...(result.warnings || [])]
+    let kgSynced = false
+    if (syncKG) {
+      try {
+        const kg = await settingsApi.saveKGConfig({ ...snapshot, reuseLLMKey: true })
+        if (kg?.success === false || kg?.error) throw new Error(kg.error || kg.message || kg.warnings?.join('；') || '保存失败')
+        warnings.push(...(kg.warnings || []))
+        kgSynced = true
+      } catch (e) { warnings.push('通用模型已保存，但图谱模型同步失败：' + e.message) }
+    }
+    await load()
+    return { success: true, warnings, kgSynced }
   }
 
   async function test() {
@@ -340,13 +420,14 @@ export const useModelStore = defineStore('model', () => {
     testResult.value = null
     try {
       const result = await testLLMConnection(config.value)
+      if (result?.success === false || result?.error) throw new Error(result.message || result.error || '连接失败')
       testResult.value = { success: true, response: result.response || result }
     } catch (e) {
       testResult.value = { success: false, message: e.message }
     } finally { testing.value = false }
   }
 
-  return { config, testing, testResult, load, save, test }
+  return { config, activeConfig, testing, testResult, load, save, test }
 })
 
 // ===== Idea Store =====
@@ -415,7 +496,7 @@ export const useProjectStore = defineStore('project', () => {
     try {
       const data = await projectsApi.list()
       projects.value = Array.isArray(data) ? data : (data.projects || [])
-      currentProject.value = data.current || projects.value.find(p => p.current) || null
+      currentProject.value = projects.value.find(p => p.id === data.currentProjectId) || data.current || projects.value.find(p => p.current) || null
     } catch (e) { console.error('Load projects failed:', e) }
   }
 

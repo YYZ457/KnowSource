@@ -24,18 +24,37 @@ function getResourceDir(name) {
 
 const PDFJS_CMAP_URL = getResourceDir('cmaps');
 const PDFJS_STANDARD_FONT_URL = getResourceDir('standard_fonts');
+let activeParse = null;
+export function isParseBusy() { return activeParse !== null; }
+function ownsParseProgress() { return !!activeParse?.taskId && storage.taskProgress.taskId === activeParse.taskId; }
+function reportParseProgress(update) {
+  // Late callbacks from a timed-out OCR operation must not overwrite a new task.
+  if (!ownsParseProgress() || update.taskId !== activeParse.taskId || activeParse.cancelRequested) return;
+  const { status: ignoredStatus, ...progress } = update;
+  storage.setTaskProgress(progress);
+}
+function cancelledError() { const error = new Error('解析已取消，未保存本次文献'); error.code = 'CANCELLED'; return error; }
+async function parseCheckpoint() {
+  while (ownsParseProgress() && storage.taskProgress.status === 'paused' && !activeParse.cancelRequested) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  if (activeParse?.cancelRequested || (ownsParseProgress() && storage.taskProgress.status === 'cancelled')) throw cancelledError();
+  if (activeParse && getCurrentProjectId() !== activeParse.projectId) throw new Error('项目已切换，解析结果已丢弃');
+}
 
 // 为当前 PDF 解析任务创建取消/暂停控制器
 function createTaskController(taskId) {
   const controller = new AbortController();
+  if (activeParse?.taskId === taskId) activeParse.controller = controller;
   // 监听外部任务状态，被取消时触发 abort
   const interval = setInterval(() => {
-    if (storage.taskProgress.taskId === taskId && storage.taskProgress.status === 'cancelled') {
+    if (activeParse?.taskId === taskId && (activeParse.cancelRequested || storage.taskProgress.status === 'cancelled')) {
       controller.abort(storage.taskProgress.log || '已取消');
     }
   }, 150);
   // 暂停检查：页间可暂停，OCR 单页内部无法暂停
   const pauseCheck = async () => {
+    await parseCheckpoint();
     while (storage.taskProgress.taskId === taskId && storage.taskProgress.status === 'paused') {
       await new Promise(resolve => setTimeout(resolve, 200));
       // 暂停期间也检查取消状态，避免暂停后被取消仍无法退出
@@ -46,23 +65,28 @@ function createTaskController(taskId) {
       }
     }
   };
-  const stopWatcher = () => clearInterval(interval);
+  const stopWatcher = () => { clearInterval(interval); if (activeParse?.controller === controller) activeParse.controller = null; };
   return { controller, pauseCheck, stopWatcher };
 }
 
 export function pauseParse() {
+  if (!ownsParseProgress() || storage.taskProgress.status !== 'running') return { success: false, error: '当前没有可暂停的文献解析任务' };
   storage.pauseTask();
   return { success: true, status: storage.taskProgress.status };
 }
 
 export function resumeParse() {
+  if (!ownsParseProgress() || storage.taskProgress.status !== 'paused' || activeParse.cancelRequested) return { success: false, error: '当前没有可恢复的文献解析任务' };
   storage.resumeTask();
   return { success: true, status: storage.taskProgress.status };
 }
 
 export function cancelParse() {
+  if (!ownsParseProgress()) return { success: false, error: '当前没有可取消的文献解析任务' };
+  activeParse.cancelRequested = true;
+  activeParse.controller?.abort('解析已取消');
   storage.cancelTask();
-  return { success: true, status: storage.taskProgress.status };
+  return { success: true, status: storage.taskProgress.status, message: '已请求取消；当前解析步骤结束后释放资源，本次文献不会保存。' };
 }
 
 export function getDocuments() {
@@ -152,7 +176,26 @@ export function deleteDocument({ id } = {}) {
   return { success: true, id };
 }
 
-export async function parseHandler({ name, content, type } = {}) {
+export async function parseHandler(params = {}) {
+  if (activeParse || storage.building || ['running', 'paused'].includes(storage.taskProgress?.status)) throw new Error('已有文献解析或图谱任务进行中，请等待完成后再导入。');
+  const session = { projectId: getCurrentProjectId(), taskId: null, docId: null, rawWritten: false, cancelRequested: false, controller: null };
+  activeParse = session;
+  try {
+    return await parseDocument(params);
+  } catch (error) {
+    if (session.rawWritten && session.docId) {
+      try { deleteRawFile(session.docId, session.projectId); } catch (_) {}
+    }
+    const cancelled = session.cancelRequested || error.code === 'CANCELLED' || error.name === 'AbortError';
+    if (ownsParseProgress()) storage.setTaskProgress({ status: cancelled ? 'cancelled' : 'error', stage: cancelled ? 'cancelled' : 'error', log: cancelled ? '解析已取消，未保存本次文献' : '解析失败：' + (error.message || '未知错误') });
+    if (cancelled) throw cancelledError();
+    throw error;
+  } finally {
+    if (activeParse === session) activeParse = null;
+  }
+}
+
+async function parseDocument({ name, content, type } = {}) {
   if (isProjectSwitching()) {
     throw new Error('项目正在切换中，请稍后再试');
   }
@@ -168,6 +211,8 @@ export async function parseHandler({ name, content, type } = {}) {
   // 为所有文档类型重置任务进度，避免前端轮询读到上一次任务的残留进度
   // （非 PDF 文档原本不会重置 taskProgress，导致轮询竞态条件）
   const taskId = `parse:${docId}`;
+  activeParse.taskId = taskId;
+  activeParse.docId = docId;
   storage.resetTaskProgress(taskId);
 
   // 获取文本内容
@@ -217,10 +262,8 @@ export async function parseHandler({ name, content, type } = {}) {
         throw new Error('base64 解码后为空');
       }
 
-      // 初始化 PDF 解析任务状态，供前端轮询进度与控制
-      // 注意：使用 pdfTaskId 而非 taskId，避免遮蔽外层 parse:${docId} 的 taskId 变量
-      const pdfTaskId = `pdf-parse:${docId}`;
-      storage.resetTaskProgress(pdfTaskId);
+      // 所有解析阶段共享任务 ID，暂停/取消不会串到其他任务。
+      const pdfTaskId = taskId;
       const { controller, pauseCheck, stopWatcher } = createTaskController(pdfTaskId);
 
       try {
@@ -238,7 +281,7 @@ export async function parseHandler({ name, content, type } = {}) {
           try {
             console.warn(`[parse] PDF "${name}" 文字层稀薄（${effectiveText.length} 字符 / ${totalPages} 页），尝试 OCR...`);
             // 进入 OCR 阶段时清空之前的文字层预览，避免旧标记残留
-            storage.setTaskProgress({ taskId: pdfTaskId, stage: 'parse-ocr', percent: 15, log: '检测到扫描版/图片 PDF，正在进行 OCR 识别...', totalPages, previewText: '' });
+            reportParseProgress({ taskId: pdfTaskId, stage: 'parse-ocr', percent: 15, log: '检测到扫描版/图片 PDF，正在进行 OCR 识别...', totalPages, previewText: '' });
             const fileLike = {
               name: name || 'document.pdf',
               size: buffer.length,
@@ -246,7 +289,7 @@ export async function parseHandler({ name, content, type } = {}) {
             };
             const ocrResult = await withTimeout(
               parsePDFOCR(fileLike, (p) => {
-                storage.setTaskProgress({ taskId: pdfTaskId, ...p, totalPages: p.totalPages });
+                reportParseProgress({ ...p, taskId: pdfTaskId, totalPages: p.totalPages });
               }, { signal: controller.signal, pauseCheck, maxOcrPages: Infinity, knownScanned: true }),
               600000,
               'parsePDFOCR'
@@ -283,7 +326,7 @@ export async function parseHandler({ name, content, type } = {}) {
       text = fixLatin1Mojibake(text);
     } catch (e) {
       if (e.code === 'CANCELLED') {
-        throw new Error('PDF 解析已取消');
+        throw cancelledError();
       }
       throw new Error('PDF 解析失败: ' + (e && e.message ? e.message : String(e)));
     }
@@ -322,7 +365,7 @@ export async function parseHandler({ name, content, type } = {}) {
         throw new Error('base64 解码后为空');
       }
 
-      storage.setTaskProgress({ taskId, stage: 'parse-text', percent: 10, log: '正在解析 Word 文档...', totalPages: 1 });
+      reportParseProgress({ taskId, stage: 'parse-text', percent: 10, log: '正在解析 Word 文档...', totalPages: 1 });
 
       // 两个 mammoth 调用都加超时保护，避免大文档卡死
       const [textResult, htmlResult] = await Promise.all([
@@ -332,7 +375,7 @@ export async function parseHandler({ name, content, type } = {}) {
       text = textResult.value || '';
       rawHtml = htmlResult.value || '';
 
-      storage.setTaskProgress({ taskId, stage: 'parse-text', percent: 90, log: 'Word 文档解析完成', totalPages: 1 });
+      reportParseProgress({ taskId, stage: 'parse-text', percent: 90, log: 'Word 文档解析完成', totalPages: 1 });
 
       // 当 mammoth 没有生成可用 HTML 时，用纯文本构造简洁 HTML 作为回退
       if (!rawHtml.trim() && text.trim()) {
@@ -366,11 +409,11 @@ export async function parseHandler({ name, content, type } = {}) {
       const fileLike = {
         name: name || 'presentation.pptx',
         size: buffer.length,
-        arrayBuffer: async () => buffer.slice().buffer
+        arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
       };
       // 传递 onProgress 回调，将 parsePPTX 的 (current, total, log) 适配为 storage 进度
       const parsed = await parsePPTX(fileLike, (current, total, log) => {
-        storage.setTaskProgress({
+        reportParseProgress({
           taskId,
           stage: 'parse-text',
           percent: total > 0 ? Math.round((current / total) * 100) : 0,
@@ -414,10 +457,10 @@ export async function parseHandler({ name, content, type } = {}) {
       const mimeType = getImageMimeType(name);
       const dataUrl = `data:${mimeType};base64,${text}`;
 
-      storage.setTaskProgress({ taskId, stage: 'parse-ocr', percent: 10, log: '正在 OCR 识别图片...', totalPages: 1, previewText: '' });
+      reportParseProgress({ taskId, stage: 'parse-ocr', percent: 10, log: '正在 OCR 识别图片...', totalPages: 1, previewText: '' });
 
       const ocrText = await ocrImage(dataUrl, (p) => {
-        storage.setTaskProgress({ taskId, stage: 'parse-ocr', percent: 10 + Math.round(p * 80), log: `OCR 识别中 ${Math.round(p * 100)}%`, totalPages: 1, previewText: '' });
+        reportParseProgress({ taskId, stage: 'parse-ocr', percent: 10 + Math.round(p * 80), log: `OCR 识别中 ${Math.round(p * 100)}%`, totalPages: 1, previewText: '' });
       });
 
       text = ocrText || '';
@@ -438,6 +481,8 @@ export async function parseHandler({ name, content, type } = {}) {
     }
   }
 
+  // 非 PDF 的库调用也要在写入前响应暂停/取消，禁止取消后仍落盘。
+  await parseCheckpoint();
   // 切分章节
   const chapters = splitTextbook(text);
 
@@ -446,7 +491,8 @@ export async function parseHandler({ name, content, type } = {}) {
   let fileSize = 0;
   if (originalBase64) {
     const sourceBuffer = Buffer.from(originalBase64, 'base64');
-    const persisted = writeRawBuffer(docId, sourceBuffer);
+    const persisted = writeRawBuffer(docId, sourceBuffer, startProjectId);
+    activeParse.rawWritten = true;
     filePath = persisted.filePath;
     fileSize = persisted.fileSize;
     originalBase64 = '';
@@ -479,7 +525,7 @@ export async function parseHandler({ name, content, type } = {}) {
   // 写入前校验当前 projectId 是否与任务启动时的 projectId 一致，避免切换项目后数据串写
   if (getCurrentProjectId() !== startProjectId) {
     // 项目已切换，清理已写入的原始文件
-    if (filePath) deleteRawFile(docId);
+    if (filePath) deleteRawFile(docId, startProjectId);
     throw new Error('项目已切换，解析结果已丢弃');
   }
   storage.documents.set(docId, doc);
@@ -584,6 +630,7 @@ async function parsePDFPages(buffer, options = {}) {
   const pdf = await withTimeout(
     pdfjsLib.getDocument({
       data,
+      isEvalSupported: false,
       disableFontFace: true,
       useSystemFonts: false,
       cMapUrl: PDFJS_CMAP_URL,
@@ -670,7 +717,7 @@ async function parsePDFPages(buffer, options = {}) {
     }
 
     if (taskId) {
-      storage.setTaskProgress({
+      reportParseProgress({
         taskId,
         stage: 'parse-text',
         percent: Math.round((i / totalPages) * 15),

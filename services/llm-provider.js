@@ -12,6 +12,12 @@
 export function inferCapabilities(vendor, model) {
   const m = (model || '').toLowerCase();
 
+  // DeepSeek 的 JSON 能力来自服务端协议，与模型名是否包含 flash 无关。
+  // contextWindow 为调度时的保守预算，不代表服务商当前公布的最大窗口。
+  if ((vendor || '').toLowerCase() === 'deepseek') {
+    return { qualityLevel: 'strong', contextWindow: 128000, supportsJsonMode: true };
+  }
+
   // Ollama 本地模型：按参数量分级
   if (vendor === 'ollama') {
     if (/(?:0\.5b|1b|1\.5b|2b|3b|tiny|small)/.test(m)) {
@@ -52,7 +58,7 @@ export function inferCapabilities(vendor, model) {
  * 重试策略：
  * - 指数退避：delay = baseDelay * 2^attempt（1s, 2s, 4s ...）
  * - 4xx（非 429）错误视为不可恢复，立即抛出（如 401 鉴权失败、400 参数错误）
- * - 429（限流）与 5xx（服务端错误）以及无 status 的网络错误（含超时 abort）会重试
+ * - 429（限流）与 5xx（服务端错误）以及无 status 的网络错误（含 TimeoutError）会重试；主动 AbortError 不重试
  * - 错误对象需携带 status 属性以便判断；调用方应在抛出错误时设置 err.status
  *
  * @param {() => Promise<any>} fn - 实际执行函数（每次重试都会重新调用，故应将
@@ -65,8 +71,10 @@ async function withRetry(fn, options = {}) {
   const baseDelay = options.baseDelay ?? 1000;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      options.signal?.throwIfAborted();
       return await fn();
     } catch (e) {
+      if (options.signal?.aborted || e.name === 'AbortError') throw e;
       // 已达最大重试次数，直接抛出
       if (attempt === maxRetries) throw e;
       // 不可恢复的错误（如响应格式异常）不重试
@@ -75,9 +83,59 @@ async function withRetry(fn, options = {}) {
       if (e.status && e.status >= 400 && e.status < 500 && e.status !== 429) throw e;
       // 指数退避等待后重试
       const delay = baseDelay * Math.pow(2, attempt);
-      await new Promise(r => setTimeout(r, delay));
+      await new Promise((resolve, reject) => {
+        const finish = () => { options.signal?.removeEventListener('abort', cancel); resolve(); };
+        const timer = setTimeout(finish, delay);
+        const cancel = () => { clearTimeout(timer); options.signal?.removeEventListener('abort', cancel); reject(options.signal.reason || new DOMException('已停止', 'AbortError')); };
+        options.signal?.addEventListener('abort', cancel, { once: true });
+        if (options.signal?.aborted) cancel();
+      });
     }
   }
+}
+
+// External cancellation stops immediately; timeout remains a retryable failure.
+function completionDeadline(options, fallback) {
+  const controller = new AbortController();
+  const timeout = options.timeoutMs || options.timeout || fallback;
+  const timer = setTimeout(() => controller.abort(new DOMException('模型响应超时', 'TimeoutError')), timeout);
+  const cancel = () => controller.abort(new DOMException('已停止模型请求', 'AbortError'));
+  options.signal?.addEventListener('abort', cancel, { once: true });
+  if (options.signal?.aborted) cancel();
+  return { signal: controller.signal, cleanup() { clearTimeout(timer); options.signal?.removeEventListener('abort', cancel); } };
+}
+
+// Structured callers must never execute a truncated or interrupted instruction.
+// These are completed HTTP responses, so leave any bounded recovery to the caller
+// instead of silently retrying the same generation through withRetry.
+function completionResult(content, finishReason, usage, options) {
+  const fail = (code, message) => {
+    const error = new Error(message);
+    error.code = code;
+    error.finishReason = finishReason || null;
+    error.unrecoverable = true;
+    throw error;
+  };
+  if (options.responseFormat === 'json') {
+    if (finishReason === 'length') {
+      fail('LLM_OUTPUT_TRUNCATED', '模型输出达到长度限制，操作指令尚未完整生成。需要增加输出预算或拆分本步任务。');
+    }
+    if (finishReason === 'content_filter') {
+      fail('LLM_FILTERED', '模型服务未返回完整内容：本次输出被内容过滤。请调整请求后重试。');
+    }
+    if (finishReason === 'insufficient_system_resource' || finishReason === 'aborted') {
+      fail('LLM_GENERATION_INTERRUPTED', '模型服务中断了本次生成，未取得完整操作指令。请稍后重试。');
+    }
+    if (finishReason === 'tool_calls' || finishReason === 'function_call') {
+      fail('LLM_UNEXPECTED_TOOL_CALLS', '模型返回了未请求的函数调用，未取得 JSON 操作指令。');
+    }
+  }
+  if (typeof content !== 'string' || !content.trim()) {
+    fail('LLM_EMPTY_CONTENT', '模型未返回可用的最终内容。请重试或调整本步请求；思考内容不会作为操作指令执行。');
+  }
+  return options.returnMetadata
+    ? { content, finishReason: finishReason || null, usage: usage || null }
+    : content;
 }
 
 // Stub LLM（无网络时回退）
@@ -127,8 +185,7 @@ class OllamaLLMProvider {
     // 实际的 fetch 逻辑提取为内部方法，便于 withRetry 包装。
     // 每次重试都会重新创建 AbortController（旧的 controller 可能已被 abort）。
     const doFetch = async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const deadline = completionDeadline(options, timeoutMs);
       try {
         // 使用 /api/chat 端点（支持所有现代聊天模型，包括 qwen2.5、llama3 等）
         const messages = [];
@@ -157,7 +214,7 @@ class OllamaLLMProvider {
         const resp = await fetch(`${this.baseUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
+          signal: deadline.signal,
           body: JSON.stringify(body)
         });
         if (!resp.ok) {
@@ -167,13 +224,21 @@ class OllamaLLMProvider {
           throw err;
         }
         const data = await resp.json();
-        return data.message?.content ?? data.response ?? '';
+        return completionResult(
+          data.message?.content ?? data.response,
+          data.done_reason,
+          { prompt_tokens: data.prompt_eval_count, completion_tokens: data.eval_count },
+          options
+        );
+      } catch (error) {
+        if (deadline.signal.aborted) throw deadline.signal.reason;
+        throw error;
       } finally {
-        clearTimeout(timer);
+        deadline.cleanup();
       }
     };
 
-    return withRetry(doFetch, { maxRetries, baseDelay: 1000 });
+    return withRetry(doFetch, { maxRetries, baseDelay: 1000, signal: options.signal });
   }
 
   async embed(text) {
@@ -222,8 +287,7 @@ class HuggingFaceLLMProvider {
     // 实际的 fetch 逻辑提取为内部方法，便于 withRetry 包装。
     // 每次重试都会重新创建 AbortController（旧的 controller 可能已被 abort）。
     const doFetch = async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const deadline = completionDeadline(options, timeoutMs);
       try {
         // HuggingFace 不支持 system role，将 system 前置拼接
         const inputs = options.system ? `${options.system}\n\n${prompt}` : prompt;
@@ -233,7 +297,7 @@ class HuggingFaceLLMProvider {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.apiKey}`
           },
-          signal: controller.signal,
+          signal: deadline.signal,
           body: JSON.stringify({
             inputs,
             parameters: {
@@ -255,12 +319,15 @@ class HuggingFaceLLMProvider {
           return data[0]?.generated_text || data[0]?.summary_text || JSON.stringify(data[0]);
         }
         return data.generated_text || data.summary_text || JSON.stringify(data);
+      } catch (error) {
+        if (deadline.signal.aborted) throw deadline.signal.reason;
+        throw error;
       } finally {
-        clearTimeout(timer);
+        deadline.cleanup();
       }
     };
 
-    return withRetry(doFetch, { maxRetries, baseDelay: 1000 });
+    return withRetry(doFetch, { maxRetries, baseDelay: 1000, signal: options.signal });
   }
 
   async embed(text) {
@@ -359,8 +426,7 @@ class OpenAICompatibleLLMProvider {
     // 实际的 fetch 逻辑提取为内部方法，便于 withRetry 包装。
     // 每次重试都会重新创建 AbortController（旧的 controller 可能已被 abort）。
     const doFetch = async () => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const deadline = completionDeadline(options, timeoutMs);
       try {
         // 构建 messages：支持 system message 通道（strong 模型显著受益）
         const messages = [];
@@ -379,8 +445,8 @@ class OpenAICompatibleLLMProvider {
         if (options.stop && Array.isArray(options.stop)) {
           body.stop = options.stop;
         }
-        // JSON mode：strong 模型启用原生 JSON 输出，避免脆弱的正则解析
-        if (options.responseFormat === 'json' && this.capabilities?.qualityLevel === 'strong') {
+        // JSON mode 由协议能力决定，不以名称或质量分档作为开关。
+        if (options.responseFormat === 'json' && this.capabilities?.supportsJsonMode) {
           body.response_format = { type: 'json_object' };
         }
         const resp = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -389,7 +455,7 @@ class OpenAICompatibleLLMProvider {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.apiKey}`
           },
-          signal: controller.signal,
+          signal: deadline.signal,
           body: JSON.stringify(body)
         });
         if (!resp.ok) {
@@ -400,22 +466,18 @@ class OpenAICompatibleLLMProvider {
           throw err;
         }
         const data = await resp.json();
-        // 空值保护：部分兼容服务在限流/错误时返回非标准结构
-        const content = data?.choices?.[0]?.message?.content;
-        if (content == null) {
-          // 修复：设置 status=200 使 withRetry 跳过重试（非 4xx/5xx，但内容不可恢复）
-          const err = new Error(`LLM 响应格式异常：未找到 choices[0].message.content（status ${resp.status}）`);
-          err.status = 200; // 标记为不可恢复（非网络错误、非限流）
-          err.unrecoverable = true;
-          throw err;
-        }
-        return content;
+        const choice = data?.choices?.[0];
+        // Only final content is executable. Never substitute reasoning_content.
+        return completionResult(choice?.message?.content, choice?.finish_reason, data?.usage, options);
+      } catch (error) {
+        if (deadline.signal.aborted) throw deadline.signal.reason;
+        throw error;
       } finally {
-        clearTimeout(timer);
+        deadline.cleanup();
       }
     };
 
-    return withRetry(doFetch, { maxRetries, baseDelay: 1000 });
+    return withRetry(doFetch, { maxRetries, baseDelay: 1000, signal: options.signal });
   }
 
   async embed(text) {
